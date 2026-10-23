@@ -4,6 +4,10 @@ from gamecat.services.project_service import ProjectService
 from gamecat.models.segment import SegmentStatus
 from gamecat.utils.iterators import SegmentIterator
 from gamecat.utils.generators import filter_segments
+from gamecat.models.glossary import GlossaryEntry
+from gamecat.database.repositories import GlossaryRepository
+from gamecat.services.glossary_service import GlossaryService
+from gamecat.qa.validator import validate_segment
 
 FORMATS = ['txt', 'csv', 'json']
 
@@ -27,6 +31,13 @@ def parser_for_version():
     p.add_argument('project_id', type=int); p.add_argument('segment_id', type=int); p.add_argument('target')
     p = sub.add_parser('export', help='eksport tłumaczeń')
     p.add_argument('project_id', type=int); p.add_argument('file', type=Path)
+
+    p = sub.add_parser('qa', help='QA wybranego segmentu')
+    p.add_argument('project_id', type=int); p.add_argument('segment_id', type=int)
+    p = sub.add_parser('glossary-add', help='dodaj termin glosariusza')
+    p.add_argument('project_id', type=int); p.add_argument('source'); p.add_argument('target')
+    p = sub.add_parser('glossary-list', help='pokaż glosariusz')
+    p.add_argument('project_id', type=int)
 
     return parser
 
@@ -67,6 +78,23 @@ def main(argv=None) -> int:
                 segments = service.list_segments(project.id)
                 service.export_file(segments, args.file, args.file.suffix.lstrip('.').lower())
                 print(f'Wyeksportowano: {args.file}')
+
+            elif args.command == 'qa':
+                seg = service.segments.get(args.segment_id)
+                if seg.project_id != project.id:
+                    raise ValueError('Segment nie należy do wybranego projektu')
+                terms = GlossaryService(GlossaryRepository(service.connection), project.id).find_terms(seg.source)
+                issues = validate_segment(seg.source, seg.target, terms)
+                for issue in issues:
+                    print(f'{issue.code}: {issue.message}')
+                if not issues:
+                    print('QA: nie znaleziono problemów')
+            elif args.command == 'glossary-add':
+                row = GlossaryRepository(service.connection).create(GlossaryEntry(args.source, args.target, project_id=project.id))
+                print(f'Dodano termin: {row.source_term} -> {row.target_term}')
+            elif args.command == 'glossary-list':
+                for row in GlossaryRepository(service.connection).list_for_project(project.id):
+                    print(f'{row.source_term} -> {row.target_term}')
 
     finally:
         service.close()

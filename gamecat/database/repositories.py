@@ -3,6 +3,7 @@ from datetime import datetime
 import sqlite3
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment
+from gamecat.models.glossary import GlossaryEntry
 
 
 def _dt(value: str) -> datetime:
@@ -56,4 +57,19 @@ class SegmentRepository:
         with self.connection:
             self.connection.execute('UPDATE segments SET target=?,status=?,comment=?,updated_at=? WHERE id=?',
                                     (segment.target, segment.status.value, segment.comment, segment.updated_at.isoformat(), segment.id))
+
+
+class GlossaryRepository:
+    def __init__(self, connection: sqlite3.Connection): self.connection = connection
+    def create(self, entry: GlossaryEntry) -> GlossaryEntry:
+        with self.connection:
+            cur = self.connection.execute('INSERT INTO glossary(project_id,source_term,target_term,description,case_sensitive) VALUES(?,?,?,?,?)',
+                                          (entry.project_id, entry.source_term, entry.target_term, entry.description, int(entry.case_sensitive)))
+        entry.id = cur.lastrowid; return entry
+    def list_for_project(self, project_id: int | None) -> list[GlossaryEntry]:
+        if project_id is None:
+            rows = self.connection.execute('SELECT * FROM glossary ORDER BY id').fetchall()
+        else:
+            rows = self.connection.execute('SELECT * FROM glossary WHERE project_id=? OR project_id IS NULL ORDER BY id', (project_id,)).fetchall()
+        return [GlossaryEntry(r['source_term'], r['target_term'], r['description'], bool(r['case_sensitive']), r['id'], r['project_id']) for r in rows]
 

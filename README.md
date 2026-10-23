@@ -1,7 +1,7 @@
-# GameCAT — wersja 0.0.6
+# GameCAT — wersja 0.0.7
 
-Nowość tej wersji: **Generatory** — strumieniowy import i filter_segments — filtrowanie w CLI.
-Kod dodany w: `gamecat/utils/generators.py`.
+Nowość tej wersji: **Regex z nazwanymi grupami** — extract_tokens, reguły QA oraz glosariusz.
+Kod dodany w: `gamecat/qa/patterns.py`.
 
 
 ## Uruchomienie
@@ -12,17 +12,24 @@ Kod dodany w: `gamecat/utils/generators.py`.
 - Wywołanie pomocy: `python -m gamecat.cli --help`.
 
 ```bash
+
 python -m gamecat.cli --db demo.sqlite new Demo
 python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.txt
 python -m gamecat.cli --db demo.sqlite list 1
 python -m gamecat.cli --db demo.sqlite translate 1 1 "Witaj!"
 python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 ```
-
-- CSV/JSON: 
+- CSV/JSON:
 ```bash
-python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv
-python -m gamecat.cli --db demo.sqlite export 1 wynik.json
+
+ python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv 
+ python -m gamecat.cli --db demo.sqlite export 1 wynik.json
+```
+
+- QA i słownik: 
+```bash
+python -m gamecat.cli --db demo.sqlite qa 1 1 
+python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie
 ```
 
 ## Mapowanie wymagań i kolejnych etapów
@@ -35,7 +42,7 @@ python -m gamecat.cli --db demo.sqlite export 1 wynik.json
 | 4 | @property i setter | TAK | gamecat/models/segment.py |
 | 5 | Iterator | TAK | gamecat/utils/iterators.py |
 | 6 | Generatory | TAK | gamecat/utils/generators.py |
-| 7 | Regex z nazwanymi grupami | — | — |
+| 7 | Regex z nazwanymi grupami | TAK | gamecat/qa/patterns.py |
 | 8 | Wątki / ThreadPoolExecutor | — | — |
 | 9 | Queue / Lock | — | — |
 | 10 | Procesy / ProcessPoolExecutor | — | — |

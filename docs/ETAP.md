@@ -1,7 +1,8 @@
-# Etap 0.0.6
+# Etap 0.0.7
 
-**Generatory**
+**Regex z nazwanymi grupami**
 
-strumieniowy import i filter_segments — filtrowanie w CLI.
+extract_tokens, reguły QA oraz glosariusz.
 
-Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
+Uruchom `python smoke_check.py`, potem `python -m gamecat.cli --help`.
+

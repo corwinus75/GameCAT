@@ -53,5 +53,12 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     from gamecat.utils.generators import filter_segments
     assert [s.position for s in filter_segments(listed,lambda s: s.status is SegmentStatus.TRANSLATED)] == [1]
 
+    from gamecat.qa.validator import validate_segment
+    assert any(x.code == 'placeholder-mismatch' for x in validate_segment('Hello {name}', 'Cześć'))
+    from gamecat.models.glossary import GlossaryEntry
+    from gamecat.database.repositories import GlossaryRepository
+    GlossaryRepository(reopened.connection).create(GlossaryEntry('Hello','Cześć', project_id=p2.id))
+    assert len(GlossaryRepository(reopened.connection).list_for_project(p2.id)) == 1
+
     reopened.close()
 print('OK: etap sprawdzony')

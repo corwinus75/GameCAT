@@ -23,6 +23,14 @@ CREATE TABLE IF NOT EXISTS segments (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_segments_project_position ON segments(project_id, position);
+CREATE TABLE IF NOT EXISTS glossary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    source_term TEXT NOT NULL,
+    target_term TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    case_sensitive INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
