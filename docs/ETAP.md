@@ -1,9 +1,7 @@
-# Etap 0.0.5
+# Etap 0.0.6
 
-**Iterator**
+**Generatory**
 
-SegmentIterator — przechodzenie po segmentach w CLI.
+strumieniowy import i filter_segments — filtrowanie w CLI.
 
 Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
-
-

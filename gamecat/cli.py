@@ -3,8 +3,9 @@ from pathlib import Path
 from gamecat.services.project_service import ProjectService
 from gamecat.models.segment import SegmentStatus
 from gamecat.utils.iterators import SegmentIterator
+from gamecat.utils.generators import filter_segments
 
-FORMATS = ['txt']
+FORMATS = ['txt', 'csv', 'json']
 
 
 def parser_for_version():
@@ -50,7 +51,7 @@ def main(argv=None) -> int:
             elif args.command == 'list':
                 segments = service.list_segments(project.id)
                 segments = SegmentIterator(segments)
-                segments = (s for s in segments if args.status == 'ALL' or s.status.value == args.status)
+                segments = filter_segments(segments, lambda s: args.status == 'ALL' or s.status.value == args.status)
 
                 for s in segments:
                     print(f'{s.id} [{s.status.value}] {s.source} -> {s.target}')

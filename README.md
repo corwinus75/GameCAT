@@ -1,9 +1,8 @@
-# GameCAT — wersja 0.0.5
+# GameCAT — wersja 0.0.6
 
-Nowość tej wersji: **Iterator** — SegmentIterator — przechodzenie po segmentach w CLI.
-Kod dodany w: `gamecat/utils/iterators.py`.
+Nowość tej wersji: **Generatory** — strumieniowy import i filter_segments — filtrowanie w CLI.
+Kod dodany w: `gamecat/utils/generators.py`.
 
- 
 
 ## Uruchomienie
 
@@ -20,7 +19,11 @@ python -m gamecat.cli --db demo.sqlite translate 1 1 "Witaj!"
 python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 ```
 
-
+- CSV/JSON: 
+```bash
+python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv
+python -m gamecat.cli --db demo.sqlite export 1 wynik.json
+```
 
 ## Mapowanie wymagań i kolejnych etapów
 
@@ -31,7 +34,7 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 | 3 | Dekorator metody z self | TAK | gamecat/services/project_service.py |
 | 4 | @property i setter | TAK | gamecat/models/segment.py |
 | 5 | Iterator | TAK | gamecat/utils/iterators.py |
-| 6 | Generatory | — | — |
+| 6 | Generatory | TAK | gamecat/utils/generators.py |
 | 7 | Regex z nazwanymi grupami | — | — |
 | 8 | Wątki / ThreadPoolExecutor | — | — |
 | 9 | Queue / Lock | — | — |
@@ -44,6 +47,5 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 ## Sprawdzanie
 
 `python smoke_check.py` — szybki test funkcjonalny tego etapu bez Qt.
-Testy pytest zostaną dodane w etapie/wersji 0.0.13.
-
+Testy pytest zostaną dodane w etapie 0.0.13.
 

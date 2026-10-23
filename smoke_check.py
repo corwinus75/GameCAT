@@ -50,5 +50,8 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     from gamecat.utils.iterators import SegmentIterator
     assert [s.source for s in SegmentIterator(listed)] == ['Hello {name}', 'World']
 
+    from gamecat.utils.generators import filter_segments
+    assert [s.position for s in filter_segments(listed,lambda s: s.status is SegmentStatus.TRANSLATED)] == [1]
+
     reopened.close()
 print('OK: etap sprawdzony')

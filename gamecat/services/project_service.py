@@ -11,6 +11,10 @@ from gamecat.exceptions import ImportFormatError
 from gamecat.utils.decorators import measure_time
 from gamecat.utils.decorators import retry
 from gamecat.utils.decorators import requires_project
+from gamecat.importers.csv_importer import import_csv
+from gamecat.importers.json_importer import import_json
+from gamecat.exporters.csv_exporter import export_csv
+from gamecat.exporters.json_exporter import export_json
 
 
 class ProjectService:
@@ -42,6 +46,10 @@ class ProjectService:
         suffix = path.suffix.casefold()
         if suffix == '.txt':
             imported = import_txt(path)
+        elif suffix == '.csv':
+            imported = import_csv(path, 'id', 'source', 'target')
+        elif suffix == '.json':
+            imported = import_json(path)
 
         else:
             raise ValueError(f'Nieobsługiwany import: {suffix}')
@@ -68,6 +76,10 @@ class ProjectService:
     def _export_file(segments: list[Segment], path: Path, format_name: str) -> None:
         if format_name == 'txt':
             export_txt(segments, path)
+        elif format_name == 'csv':
+            export_csv(segments, path)
+        elif format_name == 'json':
+            export_json(segments, path, 'list')
         else:
             raise ValueError(f'Nieobsługiwany eksport: {format_name}')
 

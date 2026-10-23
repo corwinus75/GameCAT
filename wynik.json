@@ -1,0 +1,72 @@
+[
+  {
+    "key": null,
+    "source": "Hello traveler!",
+    "target": "Witaj!",
+    "status": "TRANSLATED",
+    "position": 1
+  },
+  {
+    "key": null,
+    "source": "Hello traveler!",
+    "target": "",
+    "status": "NEW",
+    "position": 1
+  },
+  {
+    "key": null,
+    "source": "Hello traveler!",
+    "target": "",
+    "status": "NEW",
+    "position": 1
+  },
+  {
+    "key": null,
+    "source": "Hello traveler!",
+    "target": "",
+    "status": "NEW",
+    "position": 1
+  },
+  {
+    "key": "1",
+    "source": "Hello traveler!",
+    "target": "",
+    "status": "NEW",
+    "position": 1
+  },
+  {
+    "key": null,
+    "source": "Quest completed.",
+    "target": "",
+    "status": "NEW",
+    "position": 2
+  },
+  {
+    "key": null,
+    "source": "Quest completed.",
+    "target": "",
+    "status": "NEW",
+    "position": 2
+  },
+  {
+    "key": null,
+    "source": "Quest completed.",
+    "target": "",
+    "status": "NEW",
+    "position": 2
+  },
+  {
+    "key": null,
+    "source": "Quest completed.",
+    "target": "",
+    "status": "NEW",
+    "position": 2
+  },
+  {
+    "key": "2",
+    "source": "Quest completed.",
+    "target": "",
+    "status": "NEW",
+    "position": 2
+  }
+]

@@ -1,8 +1,9 @@
+from collections.abc import Iterator
 from pathlib import Path
 from gamecat.importers.base import ImportedSegment
 
 
-def import_txt(path: Path) -> list[ImportedSegment]:
-    """Wersja 0.0.1: wczytywanie całego pliku, przed generatorami."""
-    lines = path.read_text(encoding='utf-8').splitlines()
-    return [ImportedSegment(position, line) for position, line in enumerate(lines, 1)]
+def import_txt(path: Path) -> Iterator[ImportedSegment]:
+    with path.open('r', encoding='utf-8') as handle:
+        for position, line in enumerate(handle, 1):
+            yield ImportedSegment(position=position, source=line.rstrip('\r\n'))
