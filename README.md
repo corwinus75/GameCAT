@@ -1,8 +1,9 @@
-# GameCAT — wersja 0.0.1
+# GameCAT — wersja 0.0.2
 
-Wersja 0.0.1 jest pierwszą wersją aplikacji GameCAT. Wersja ta zawiera podstawowe funkcje importu, listowania, tłumaczenia i eksportu danych w formacie tekstowym.
-Wymagania wdrożone w tej wersji: **Dekorator funkcji** — @measure_time — mierzenie importu danych.
+
+Nowość tej wersji: **Dekorator z parametrami** — @retry(attempts=2, delay=0.05) — ponawianie importu.
 Kod dodany w: `gamecat/utils/decorators.py`.
+
 
 
 ## Uruchomienie
@@ -11,14 +12,6 @@ Kod dodany w: `gamecat/utils/decorators.py`.
 - Do interfejsu CLI: brak zewnętrznych zależności (w etapach bez GUI).
 - Dla GUI od 0.0.12: `pip install -r requirements.txt`.
 - Wywołanie pomocy: `python -m gamecat.cli --help`.
-
-
-## Przygotowanie środowiska wirtualnego i instalacja zależności:
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
 
 ```bash
 python -m gamecat.cli --db demo.sqlite new Demo
@@ -35,7 +28,7 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 | Etap | Wymaganie | Wdrożone | Główne miejsce |
 |---:|---|:---:|---|
 | 1 | Dekorator funkcji | TAK | gamecat/utils/decorators.py |
-| 2 | Dekorator z parametrami | — | — |
+| 2 | Dekorator z parametrami | TAK | gamecat/utils/decorators.py |
 | 3 | Dekorator metody z self | — | — |
 | 4 | @property i setter | — | — |
 | 5 | Iterator | — | — |
@@ -52,6 +45,6 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 ## Sprawdzanie
 
 `python smoke_check.py` — szybki test funkcjonalny tego etapu bez Qt.
-Testy pytest zostaną dodane w etapie/wersji 0.0.13.
+Testy pytest zostaną dodane w etapie 0.0.13.
 
 

@@ -20,3 +20,27 @@ def measure_time(func: Callable[P, R]) -> Callable[P, R]:
             print(f"[{func.__name__}] {elapsed:.6f} s")
     return wrapper
 
+
+def retry(attempts: int = 3, delay: float = 0.0):
+    """Retry a function up to *attempts* times before re-raising the last error."""
+    if attempts < 1:
+        raise ValueError('attempts must be >= 1')
+    if delay < 0:
+        raise ValueError('delay must be >= 0')
+
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            last: Exception | None = None
+            for attempt in range(attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as exc:  # retry is intentionally generic
+                    last = exc
+                    if attempt + 1 < attempts and delay:
+                        time.sleep(delay)
+            assert last is not None
+            raise last
+        return wrapper
+    return decorator
+

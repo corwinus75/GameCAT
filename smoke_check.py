@@ -25,5 +25,14 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     reopened.export_file(listed, dest, 'txt')
     assert dest.read_text(encoding='utf-8').startswith('Cześć {name}')
 
+    from gamecat.utils.decorators import retry
+    calls = []
+    @retry(attempts=2)
+    def intermittent():
+        calls.append(1)
+        if len(calls) < 2: raise RuntimeError('temporary')
+        return 42
+    assert intermittent() == 42 and len(calls) == 2
+
     reopened.close()
 print('OK: etap sprawdzony')

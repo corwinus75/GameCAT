@@ -9,6 +9,7 @@ from gamecat.models.project import Project
 from gamecat.models.segment import Segment
 from gamecat.exceptions import ImportFormatError
 from gamecat.utils.decorators import measure_time
+from gamecat.utils.decorators import retry
 
 
 class ProjectService:
@@ -32,6 +33,7 @@ class ProjectService:
         return self.segments.list_for_project(project_id) if project_id is not None else []
 
     @measure_time
+    @retry(attempts=2, delay=0.05)
 
     def _import_file(self, project: Project, path: Path) -> list[Segment]:
         if project.id is None:
