@@ -1,8 +1,9 @@
-# GameCAT — wersja 0.0.4
+# GameCAT — wersja 0.0.5
 
-Nowość tej wersji: **@property i setter** — Segment.target i Segment.status — walidacja.
-Kod dodany w: `gamecat/models/segment.py`.
+Nowość tej wersji: **Iterator** — SegmentIterator — przechodzenie po segmentach w CLI.
+Kod dodany w: `gamecat/utils/iterators.py`.
 
+ 
 
 ## Uruchomienie
 
@@ -29,7 +30,7 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 | 2 | Dekorator z parametrami | TAK | gamecat/utils/decorators.py |
 | 3 | Dekorator metody z self | TAK | gamecat/services/project_service.py |
 | 4 | @property i setter | TAK | gamecat/models/segment.py |
-| 5 | Iterator | — | — |
+| 5 | Iterator | TAK | gamecat/utils/iterators.py |
 | 6 | Generatory | — | — |
 | 7 | Regex z nazwanymi grupami | — | — |
 | 8 | Wątki / ThreadPoolExecutor | — | — |
@@ -43,6 +44,6 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 ## Sprawdzanie
 
 `python smoke_check.py` — szybki test funkcjonalny tego etapu bez Qt.
-Testy pytest zostaną dodane w etapie 0.0.13.
+Testy pytest zostaną dodane w etapie/wersji 0.0.13.
 
 

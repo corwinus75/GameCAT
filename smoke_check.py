@@ -47,5 +47,8 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     except TypeError: pass
     else: raise AssertionError('property target did not validate')
 
+    from gamecat.utils.iterators import SegmentIterator
+    assert [s.source for s in SegmentIterator(listed)] == ['Hello {name}', 'World']
+
     reopened.close()
 print('OK: etap sprawdzony')

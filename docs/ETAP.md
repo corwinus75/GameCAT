@@ -1,8 +1,9 @@
-# Etap 0.0.4
+# Etap 0.0.5
 
-**@property i setter**
+**Iterator**
 
-Segment.target i Segment.status — walidacja.
+SegmentIterator — przechodzenie po segmentach w CLI.
 
-Uruchom `python smoke_check.py`, potem `python -m gamecat.cli --help`.
+Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
+
 
