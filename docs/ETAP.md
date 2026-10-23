@@ -1,8 +1,8 @@
-# Etap 0.0.2
+# Etap 0.0.3
 
-**Dekorator z parametrami**
+**Dekorator metody z self**
 
-@retry(attempts=2, delay=0.05) — ponawianie importu.
+@requires_project — ochrona operacji na projekcie.
 
 Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
 

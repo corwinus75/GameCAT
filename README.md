@@ -1,9 +1,9 @@
-# GameCAT — wersja 0.0.2
+# GameCAT — wersja 0.0.3
 
 
-Nowość tej wersji: **Dekorator z parametrami** — @retry(attempts=2, delay=0.05) — ponawianie importu.
-Kod dodany w: `gamecat/utils/decorators.py`.
 
+Nowość tej wersji: **Dekorator metody z self** — @requires_project — ochrona operacji na projekcie.
+Kod dodany w: `gamecat/services/project_service.py`.
 
 
 ## Uruchomienie
@@ -29,7 +29,7 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 |---:|---|:---:|---|
 | 1 | Dekorator funkcji | TAK | gamecat/utils/decorators.py |
 | 2 | Dekorator z parametrami | TAK | gamecat/utils/decorators.py |
-| 3 | Dekorator metody z self | — | — |
+| 3 | Dekorator metody z self | TAK | gamecat/services/project_service.py |
 | 4 | @property i setter | — | — |
 | 5 | Iterator | — | — |
 | 6 | Generatory | — | — |
@@ -46,5 +46,4 @@ python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
 
 `python smoke_check.py` — szybki test funkcjonalny tego etapu bez Qt.
 Testy pytest zostaną dodane w etapie 0.0.13.
-
 

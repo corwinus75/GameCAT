@@ -10,6 +10,7 @@ from gamecat.models.segment import Segment
 from gamecat.exceptions import ImportFormatError
 from gamecat.utils.decorators import measure_time
 from gamecat.utils.decorators import retry
+from gamecat.utils.decorators import requires_project
 
 
 class ProjectService:
@@ -52,9 +53,11 @@ class ProjectService:
             raise ImportFormatError(f'Nie można zaimportować {path.name}: {exc}') from exc
         return result
 
+    @requires_project
     def import_file(self, project: Project, path: Path) -> list[Segment]:
         return self._import_file(project, path)
 
+    @requires_project
 
     def save_segment(self, segment: Segment) -> None:
 
@@ -68,6 +71,7 @@ class ProjectService:
         else:
             raise ValueError(f'Nieobsługiwany eksport: {format_name}')
 
+    @requires_project
 
     def export_file(self, segments: list[Segment], path: Path, format_name: str) -> None:
         self._export_file(segments, path, format_name)

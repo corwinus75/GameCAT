@@ -34,5 +34,14 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
         return 42
     assert intermittent() == 42 and len(calls) == 2
 
+    from gamecat.utils.decorators import requires_project
+    class Guard:
+        current_project = None
+        @requires_project
+        def run(self): return 1
+    try: Guard().run()
+    except RuntimeError: pass
+    else: raise AssertionError('project guard did not trigger')
+
     reopened.close()
 print('OK: etap sprawdzony')

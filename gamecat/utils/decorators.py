@@ -44,3 +44,12 @@ def retry(attempts: int = 3, delay: float = 0.0):
         return wrapper
     return decorator
 
+
+def requires_project(method: Callable[P, R]) -> Callable[P, R]:
+    """Guard methods that require ``self.current_project``."""
+    @functools.wraps(method)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> R:
+        if getattr(self, 'current_project', None) is None:
+            raise RuntimeError('No project is open')
+        return method(self, *args, **kwargs)
+    return wrapper  # type: ignore[return-value]
