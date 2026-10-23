@@ -43,5 +43,9 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     except RuntimeError: pass
     else: raise AssertionError('project guard did not trigger')
 
+    try: listed[0].target = 123
+    except TypeError: pass
+    else: raise AssertionError('property target did not validate')
+
     reopened.close()
 print('OK: etap sprawdzony')

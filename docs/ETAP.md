@@ -1,9 +1,8 @@
-# Etap 0.0.3
+# Etap 0.0.4
 
-**Dekorator metody z self**
+**@property i setter**
 
-@requires_project — ochrona operacji na projekcie.
+Segment.target i Segment.status — walidacja.
 
-Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
-
+Uruchom `python smoke_check.py`, potem `python -m gamecat.cli --help`.
 
