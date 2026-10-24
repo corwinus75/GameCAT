@@ -1,8 +1,9 @@
-# GameCAT — wersja 0.0.9
+# GameCAT — wersja 0.0.10
 
 
-Nowość tej wersji: **Queue / Lock** — SaveQueue — asynchroniczny, synchronizowany zapis.
-Kod dodany w: `gamecat/concurrency/save_queue.py`.
+Nowość tej wersji: **Procesy / ProcessPoolExecutor** — find_matches_parallel — procesowy matcher TM.
+Kod dodany w: `gamecat/tm/parallel_matcher.py`.
+
 
 
 ## Uruchomienie
@@ -11,7 +12,6 @@ Kod dodany w: `gamecat/concurrency/save_queue.py`.
 - Do interfejsu CLI: brak zewnętrznych zależności (w etapach bez GUI).
 - Dla GUI od 0.0.12: `pip install -r requirements.txt`.
 - Wywołanie pomocy: `python -m gamecat.cli --help`.
-
 
 `python -m gamecat.cli --db demo.sqlite new Demo`
 
@@ -35,6 +35,12 @@ Kod dodany w: `gamecat/concurrency/save_queue.py`.
 
 `python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie`
 
+- TM: 
+
+`python -m gamecat.cli --db demo.sqlite tm-add 1 "Hello" "Cześć"`
+
+`python -m gamecat.cli --db demo.sqlite tm-search 1 "Hello"`.
+
 ## Mapowanie wymagań i kolejnych etapów
 
 | Etap | Wymaganie | Wdrożone | Główne miejsce |
@@ -48,7 +54,7 @@ Kod dodany w: `gamecat/concurrency/save_queue.py`.
 | 7 | Regex z nazwanymi grupami | TAK | gamecat/qa/patterns.py |
 | 8 | Wątki / ThreadPoolExecutor | TAK | gamecat/concurrency/io_workers.py |
 | 9 | Queue / Lock | TAK | gamecat/concurrency/save_queue.py |
-| 10 | Procesy / ProcessPoolExecutor | — | — |
+| 10 | Procesy / ProcessPoolExecutor | TAK | gamecat/tm/parallel_matcher.py |
 | 11 | GIL | — | — |
 | 12 | GUI / PySide6 | — | — |
 | 13 | Testy | — | — |

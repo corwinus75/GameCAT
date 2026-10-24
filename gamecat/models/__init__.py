@@ -1,1 +1,1 @@
-"""GameCAT — etapowa rekonstrukcja."""
+"""Models for gamecat."""

@@ -4,6 +4,7 @@ import sqlite3
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment
 from gamecat.models.glossary import GlossaryEntry
+from gamecat.models.translation_memory import TranslationMemoryEntry
 
 
 def _dt(value: str) -> datetime:
@@ -73,3 +74,14 @@ class GlossaryRepository:
             rows = self.connection.execute('SELECT * FROM glossary WHERE project_id=? OR project_id IS NULL ORDER BY id', (project_id,)).fetchall()
         return [GlossaryEntry(r['source_term'], r['target_term'], r['description'], bool(r['case_sensitive']), r['id'], r['project_id']) for r in rows]
 
+
+class TranslationMemoryRepository:
+    def __init__(self, connection: sqlite3.Connection): self.connection = connection
+    def create(self, entry: TranslationMemoryEntry) -> TranslationMemoryEntry:
+        with self.connection:
+            cur = self.connection.execute('INSERT INTO translation_memory(source,target,source_language,target_language,origin_project,created_at) VALUES(?,?,?,?,?,?)',
+                                          (entry.source, entry.target, entry.source_language, entry.target_language, entry.origin_project, entry.created_at.isoformat()))
+        entry.id = cur.lastrowid; return entry
+    def list_all(self) -> list[TranslationMemoryEntry]:
+        rows = self.connection.execute('SELECT * FROM translation_memory ORDER BY id').fetchall()
+        return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]

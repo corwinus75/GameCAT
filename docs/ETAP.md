@@ -1,8 +1,8 @@
-# Etap 0.0.9
+# Etap 0.0.10
 
-**Queue / Lock**
+**Procesy / ProcessPoolExecutor**
 
-SaveQueue — asynchroniczny, synchronizowany zapis.
+find_matches_parallel — procesowy matcher TM.
 
 Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
 

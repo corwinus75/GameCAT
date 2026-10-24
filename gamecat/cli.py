@@ -8,6 +8,9 @@ from gamecat.models.glossary import GlossaryEntry
 from gamecat.database.repositories import GlossaryRepository
 from gamecat.services.glossary_service import GlossaryService
 from gamecat.qa.validator import validate_segment
+from gamecat.models.translation_memory import TranslationMemoryEntry
+from gamecat.database.repositories import TranslationMemoryRepository
+from gamecat.tm.parallel_matcher import find_matches_parallel
 
 FORMATS = ['txt', 'csv', 'json']
 
@@ -38,6 +41,11 @@ def parser_for_version():
     p.add_argument('project_id', type=int); p.add_argument('source'); p.add_argument('target')
     p = sub.add_parser('glossary-list', help='pokaż glosariusz')
     p.add_argument('project_id', type=int)
+
+    p = sub.add_parser('tm-add', help='zapisz parę w pamięci tłumaczeniowej')
+    p.add_argument('project_id', type=int); p.add_argument('source'); p.add_argument('target')
+    p = sub.add_parser('tm-search', help='fuzzy matching uruchomiony procesowo')
+    p.add_argument('project_id', type=int); p.add_argument('source')
 
     return parser
 
@@ -95,6 +103,16 @@ def main(argv=None) -> int:
             elif args.command == 'glossary-list':
                 for row in GlossaryRepository(service.connection).list_for_project(project.id):
                     print(f'{row.source_term} -> {row.target_term}')
+
+            elif args.command == 'tm-add':
+                row = TranslationMemoryEntry(args.source, args.target, project.source_language, project.target_language, project.name)
+                TranslationMemoryRepository(service.connection).create(row)
+                print('Dodano do TM')
+            elif args.command == 'tm-search':
+                rows = [r for r in TranslationMemoryRepository(service.connection).list_all() if r.source_language == project.source_language and r.target_language == project.target_language]
+                matches = find_matches_parallel(args.source, rows, threshold=0.1, workers=2)
+                for match in matches:
+                    print(f'{match.score:.0%} {match.entry.source} -> {match.entry.target}')
 
     finally:
         service.close()

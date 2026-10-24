@@ -31,6 +31,15 @@ CREATE TABLE IF NOT EXISTS glossary (
     description TEXT NOT NULL DEFAULT '',
     case_sensitive INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS translation_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    source_language TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    origin_project TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
