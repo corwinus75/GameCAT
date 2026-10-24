@@ -1,8 +1,8 @@
-# Etap 0.0.10
+# Etap 0.0.11
 
-**Procesy / ProcessPoolExecutor**
+**GIL**
 
-find_matches_parallel — procesowy matcher TM.
+benchmark trzech strategii: sequential/threads/processes.
 
 Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
 

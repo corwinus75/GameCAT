@@ -1,1 +1,1 @@
-# Etap bez dodatkowych zależności
+matplotlib>=3.9

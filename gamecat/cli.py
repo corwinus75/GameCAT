@@ -11,6 +11,7 @@ from gamecat.qa.validator import validate_segment
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.database.repositories import TranslationMemoryRepository
 from gamecat.tm.parallel_matcher import find_matches_parallel
+from benchmarks.gil_benchmark import run_benchmark
 
 FORMATS = ['txt', 'csv', 'json']
 
@@ -46,12 +47,18 @@ def parser_for_version():
     p.add_argument('project_id', type=int); p.add_argument('source'); p.add_argument('target')
     p = sub.add_parser('tm-search', help='fuzzy matching uruchomiony procesowo')
     p.add_argument('project_id', type=int); p.add_argument('source')
+    sub.add_parser('benchmark', help='szybki benchmark GIL')
 
     return parser
 
 
 def main(argv=None) -> int:
     args = parser_for_version().parse_args(argv)
+
+    if args.command == 'benchmark':
+        for kind, duration in run_benchmark(quick=True).items():
+            print(f'{kind}: {duration:.6f}s')
+        return 0
 
     service = ProjectService(args.db)
     try:

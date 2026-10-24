@@ -1,16 +1,14 @@
-# GameCAT — wersja 0.0.10
+# GameCAT — wersja 0.0.11
 
 
-Nowość tej wersji: **Procesy / ProcessPoolExecutor** — find_matches_parallel — procesowy matcher TM.
-Kod dodany w: `gamecat/tm/parallel_matcher.py`.
-
-
+Nowość tej wersji: **GIL** — benchmark trzech strategii: sequential/threads/processes.
+Kod dodany w: `benchmarks/gil_benchmark.py`.
 
 ## Uruchomienie
 
 - Python >=3.12.
-- Do interfejsu CLI: brak zewnętrznych zależności (w etapach bez GUI).
-- Dla GUI od 0.0.12: `pip install -r requirements.txt`.
+- Do interfejsu CLI: brak zewnętrznych zależności (w etapach bez GUI i GIL).
+- Dla benchmarku(mathploitlib): `pip install -r requirements.txt`.
 - Wywołanie pomocy: `python -m gamecat.cli --help`.
 
 `python -m gamecat.cli --db demo.sqlite new Demo`
@@ -41,6 +39,10 @@ Kod dodany w: `gamecat/tm/parallel_matcher.py`.
 
 `python -m gamecat.cli --db demo.sqlite tm-search 1 "Hello"`.
 
+- GIL:
+
+- `python benchmarks/gil_benchmark.py --quick` (wymaga zainstalowanego matplotlib tylko do własnych wykresów).
+
 ## Mapowanie wymagań i kolejnych etapów
 
 | Etap | Wymaganie | Wdrożone | Główne miejsce |
@@ -55,7 +57,7 @@ Kod dodany w: `gamecat/tm/parallel_matcher.py`.
 | 8 | Wątki / ThreadPoolExecutor | TAK | gamecat/concurrency/io_workers.py |
 | 9 | Queue / Lock | TAK | gamecat/concurrency/save_queue.py |
 | 10 | Procesy / ProcessPoolExecutor | TAK | gamecat/tm/parallel_matcher.py |
-| 11 | GIL | — | — |
+| 11 | GIL | TAK | benchmarks/gil_benchmark.py |
 | 12 | GUI / PySide6 | — | — |
 | 13 | Testy | — | — |
 | 14 | Logging | — | — |
@@ -64,4 +66,3 @@ Kod dodany w: `gamecat/tm/parallel_matcher.py`.
 
 `python smoke_check.py` — szybki test funkcjonalny tego etapu bez Qt.
 Testy pytest zostaną dodane w etapie 0.0.13.
-
