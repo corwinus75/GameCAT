@@ -1,8 +1,8 @@
-# Etap 0.0.8
+# Etap 0.0.9
 
-**Wątki / ThreadPoolExecutor**
+**Queue / Lock**
 
-asynchroniczny import/eksport przez IOWorkerPool.
+SaveQueue — asynchroniczny, synchronizowany zapis.
 
 Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
 

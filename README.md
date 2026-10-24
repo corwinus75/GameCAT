@@ -1,8 +1,8 @@
-# GameCAT — wersja 0.0.8
+# GameCAT — wersja 0.0.9
 
 
-Nowość tej wersji: **Wątki / ThreadPoolExecutor** — asynchroniczny import/eksport przez IOWorkerPool.
-Kod dodany w: `gamecat/concurrency/io_workers.py`.
+Nowość tej wersji: **Queue / Lock** — SaveQueue — asynchroniczny, synchronizowany zapis.
+Kod dodany w: `gamecat/concurrency/save_queue.py`.
 
 
 ## Uruchomienie
@@ -23,20 +23,17 @@ Kod dodany w: `gamecat/concurrency/io_workers.py`.
 
 `python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt`
 
-
 - CSV/JSON:
 
 `python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv`
 
 `python -m gamecat.cli --db demo.sqlite export 1 wynik.json`
 
-- QA i słownik:
+- QA:  oraz słownik:
 
 `python -m gamecat.cli --db demo.sqlite qa 1 1`
 
 `python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie`
-
-
 
 ## Mapowanie wymagań i kolejnych etapów
 
@@ -50,7 +47,7 @@ Kod dodany w: `gamecat/concurrency/io_workers.py`.
 | 6 | Generatory | TAK | gamecat/utils/generators.py |
 | 7 | Regex z nazwanymi grupami | TAK | gamecat/qa/patterns.py |
 | 8 | Wątki / ThreadPoolExecutor | TAK | gamecat/concurrency/io_workers.py |
-| 9 | Queue / Lock | — | — |
+| 9 | Queue / Lock | TAK | gamecat/concurrency/save_queue.py |
 | 10 | Procesy / ProcessPoolExecutor | — | — |
 | 11 | GIL | — | — |
 | 12 | GUI / PySide6 | — | — |
