@@ -56,7 +56,7 @@ def main(argv=None) -> int:
         else:
             project = service.load_project(args.project_id)
             if args.command == 'import':
-                added = service.import_file(project, args.file)
+                added = service.import_file_async(project, args.file).result()
 
                 print(f'Zaimportowano: {len(added)} segmentów')
             elif args.command == 'list':
@@ -76,7 +76,7 @@ def main(argv=None) -> int:
                 print(f'Zapisano segment: {segment.id}')
             elif args.command == 'export':
                 segments = service.list_segments(project.id)
-                service.export_file(segments, args.file, args.file.suffix.lstrip('.').lower())
+                service.export_file_async(segments, args.file, args.file.suffix.lstrip('.').lower()).result()
                 print(f'Wyeksportowano: {args.file}')
 
             elif args.command == 'qa':

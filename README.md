@@ -1,7 +1,8 @@
-# GameCAT — wersja 0.0.7
+# GameCAT — wersja 0.0.8
 
-Nowość tej wersji: **Regex z nazwanymi grupami** — extract_tokens, reguły QA oraz glosariusz.
-Kod dodany w: `gamecat/qa/patterns.py`.
+
+Nowość tej wersji: **Wątki / ThreadPoolExecutor** — asynchroniczny import/eksport przez IOWorkerPool.
+Kod dodany w: `gamecat/concurrency/io_workers.py`.
 
 
 ## Uruchomienie
@@ -11,26 +12,31 @@ Kod dodany w: `gamecat/qa/patterns.py`.
 - Dla GUI od 0.0.12: `pip install -r requirements.txt`.
 - Wywołanie pomocy: `python -m gamecat.cli --help`.
 
-```bash
 
-python -m gamecat.cli --db demo.sqlite new Demo
-python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.txt
-python -m gamecat.cli --db demo.sqlite list 1
-python -m gamecat.cli --db demo.sqlite translate 1 1 "Witaj!"
-python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt
-```
+`python -m gamecat.cli --db demo.sqlite new Demo`
+
+`python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.txt`
+
+`python -m gamecat.cli --db demo.sqlite list 1`
+
+`python -m gamecat.cli --db demo.sqlite translate 1 1 "Witaj!"`
+
+`python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt`
+
+
 - CSV/JSON:
-```bash
 
- python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv 
- python -m gamecat.cli --db demo.sqlite export 1 wynik.json
-```
+`python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv`
 
-- QA i słownik: 
-```bash
-python -m gamecat.cli --db demo.sqlite qa 1 1 
-python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie
-```
+`python -m gamecat.cli --db demo.sqlite export 1 wynik.json`
+
+- QA i słownik:
+
+`python -m gamecat.cli --db demo.sqlite qa 1 1`
+
+`python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie`
+
+
 
 ## Mapowanie wymagań i kolejnych etapów
 
@@ -43,7 +49,7 @@ python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie
 | 5 | Iterator | TAK | gamecat/utils/iterators.py |
 | 6 | Generatory | TAK | gamecat/utils/generators.py |
 | 7 | Regex z nazwanymi grupami | TAK | gamecat/qa/patterns.py |
-| 8 | Wątki / ThreadPoolExecutor | — | — |
+| 8 | Wątki / ThreadPoolExecutor | TAK | gamecat/concurrency/io_workers.py |
 | 9 | Queue / Lock | — | — |
 | 10 | Procesy / ProcessPoolExecutor | — | — |
 | 11 | GIL | — | — |

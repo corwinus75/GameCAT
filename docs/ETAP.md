@@ -1,8 +1,8 @@
-# Etap 0.0.7
+# Etap 0.0.8
 
-**Regex z nazwanymi grupami**
+**Wątki / ThreadPoolExecutor**
 
-extract_tokens, reguły QA oraz glosariusz.
+asynchroniczny import/eksport przez IOWorkerPool.
 
-Uruchom `python smoke_check.py`, potem `python -m gamecat.cli --help`.
+Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
 

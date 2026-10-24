@@ -10,7 +10,7 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     db = root / 'p.sqlite'
     svc = ProjectService(db)
     project = svc.create_project('Demo', 'en', 'pl', 'txt')
-    added = svc.import_file(project, inp)
+    added = svc.import_file_async(project, inp).result(timeout=10)
 
     assert len(added) == 2
     added[0].target = 'Cześć {name}'
@@ -22,7 +22,7 @@ with TemporaryDirectory(prefix='gamecat_smoke_') as tmp:
     listed = reopened.list_segments(p2.id)
     assert listed[0].target == 'Cześć {name}'
     dest = root / 'out.txt'
-    reopened.export_file(listed, dest, 'txt')
+    reopened.export_file_async(listed, dest, 'txt').result(timeout=10)
     assert dest.read_text(encoding='utf-8').startswith('Cześć {name}')
 
     from gamecat.utils.decorators import retry

@@ -15,6 +15,8 @@ from gamecat.importers.csv_importer import import_csv
 from gamecat.importers.json_importer import import_json
 from gamecat.exporters.csv_exporter import export_csv
 from gamecat.exporters.json_exporter import export_json
+from concurrent.futures import Future
+from gamecat.concurrency.io_workers import IOWorkerPool
 
 
 class ProjectService:
@@ -25,6 +27,7 @@ class ProjectService:
         self.projects = ProjectRepository(self.connection)
         self.segments = SegmentRepository(self.connection)
         self.current_project: Project | None = None
+        self.io = IOWorkerPool(max_io_workers)
 
     def create_project(self, name: str, source_language: str, target_language: str, source_format: str) -> Project:
         self.current_project = self.projects.create(Project(name, source_language, target_language, source_format))
@@ -65,6 +68,10 @@ class ProjectService:
     def import_file(self, project: Project, path: Path) -> list[Segment]:
         return self._import_file(project, path)
 
+
+    def import_file_async(self, project: Project, path: Path) -> Future[list[Segment]]:
+        return self.io.submit(self.import_file, project, path)
+
     @requires_project
 
     def save_segment(self, segment: Segment) -> None:
@@ -89,5 +96,10 @@ class ProjectService:
         self._export_file(segments, path, format_name)
 
 
+    def export_file_async(self, segments: list[Segment], path: Path, format_name: str) -> Future[None]:
+        return self.io.submit(self._export_file, segments, path, format_name)
+
+
     def close(self) -> None:
+        self.io.close()
         self.connection.close()
