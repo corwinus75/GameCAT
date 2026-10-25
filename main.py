@@ -1,12 +1,13 @@
 import sys
 from PySide6.QtWidgets import QApplication
 from gamecat.gui.main_window import MainWindow
+from gamecat.logging_config import configure_logging
 
 
-def main():
-    app=QApplication(sys.argv)
-    window=MainWindow()
-    window.show()
+def main() -> int:
+    configure_logging()
+    app = QApplication(sys.argv)
+    window = MainWindow(); window.show()
     return app.exec()
 
 

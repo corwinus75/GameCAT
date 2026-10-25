@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from datetime import datetime
 import sqlite3
+
+
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment
 from gamecat.models.glossary import GlossaryEntry
@@ -35,7 +38,8 @@ class ProjectRepository:
 
 
 class SegmentRepository:
-    def __init__(self, connection: sqlite3.Connection): self.connection = connection
+    def __init__(self, connection: sqlite3.Connection):
+        self.connection = connection
     def create(self, segment: Segment) -> Segment:
         if segment.project_id is None: raise ValueError('segment requires project_id')
         with self.connection:

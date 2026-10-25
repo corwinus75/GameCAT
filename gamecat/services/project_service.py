@@ -103,6 +103,12 @@ class ProjectService:
 
 
     def close(self) -> None:
-        self.save_queue.close()
-        self.io.close()
-        self.connection.close()
+        # A failed background save must not prevent closing the worker pool
+        # and the database connection. Preserve the original save error.
+        try:
+            self.save_queue.close()
+        finally:
+            try:
+                self.io.close()
+            finally:
+                self.connection.close()
