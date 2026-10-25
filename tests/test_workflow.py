@@ -22,3 +22,37 @@ def test_end_to_end_project_import_edit_reopen_export(tmp_path: Path):
     reopened.export_file_async(rows, out, 'txt').result(timeout=5)
     assert out.read_text(encoding='utf-8').startswith('Cześć\n')
     reopened.close()
+
+
+def test_csv_import_accepts_user_selected_columns(tmp_path: Path):
+    db = tmp_path / 'project.sqlite'
+    src = tmp_path / 'source.csv'
+    src.write_text('string_id,english,polish\nA1,Hello,Cześć\nA2,World,Świat\n', encoding='utf-8')
+    service = ProjectService(db)
+    project = service.create_project('CSV Demo', 'en', 'pl', 'csv')
+    try:
+        segments = service.import_file_async(
+            project,
+            src,
+            csv_columns=('string_id', 'english', 'polish'),
+        ).result(timeout=5)
+        assert [(s.key, s.source, s.target) for s in segments] == [
+            ('A1', 'Hello', 'Cześć'),
+            ('A2', 'World', 'Świat'),
+        ]
+    finally:
+        service.close()
+
+
+def test_service_lists_projects_after_reopen(tmp_path: Path):
+    db = tmp_path / 'project.sqlite'
+    service = ProjectService(db)
+    created = service.create_project('Demo', 'en', 'pl', 'txt')
+    service.close()
+
+    reopened = ProjectService(db)
+    try:
+        projects = reopened.list_projects()
+        assert [(p.id, p.name) for p in projects] == [(created.id, 'Demo')]
+    finally:
+        reopened.close()

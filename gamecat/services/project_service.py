@@ -33,19 +33,28 @@ class ProjectService:
             raise ValueError('project_id is required')
         return self.projects.get(project_id)
 
+    def list_projects(self) -> list[Project]:
+        return self.projects.list_all()
+
     def list_segments(self, project_id: int | None) -> list[Segment]:
         if project_id is None:
             return []
         return self.segments.list_for_project(project_id)
 
-    def _import_file(self, project: Project, path: Path) -> list[Segment]:
+    def _import_file(
+        self,
+        project: Project,
+        path: Path,
+        csv_columns: tuple[str, str, str | None] | None = None,
+    ) -> list[Segment]:
         if project.id is None:
             raise ValueError('project must be persisted before import')
         suffix = path.suffix.casefold()
         if suffix == '.txt':
             imported = import_txt(path)
         elif suffix == '.csv':
-            imported = import_csv(path, 'id', 'source', 'target')
+            key_column, source_column, target_column = csv_columns or ('id', 'source', 'target')
+            imported = import_csv(path, key_column, source_column, target_column)
         elif suffix == '.json':
             imported = import_json(path)
         else:
@@ -58,8 +67,13 @@ class ProjectService:
             raise ImportFormatError(f'Cannot import {path.name}: {exc}') from exc
         return result
 
-    def import_file_async(self, project: Project, path: Path) -> Future[list[Segment]]:
-        return self.io.submit(self._import_file, project, path)
+    def import_file_async(
+        self,
+        project: Project,
+        path: Path,
+        csv_columns: tuple[str, str, str | None] | None = None,
+    ) -> Future[list[Segment]]:
+        return self.io.submit(self._import_file, project, path, csv_columns)
 
     def save_segment(self, segment: Segment) -> None:
         self.segments.update(segment)

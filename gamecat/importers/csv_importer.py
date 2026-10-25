@@ -5,7 +5,7 @@ from gamecat.importers.base import ImportedSegment
 
 
 def import_csv(path: Path, key_column: str, source_column: str, target_column: str | None = None) -> Iterator[ImportedSegment]:
-    with path.open('r', encoding='utf-8', newline='') as handle:
+    with path.open('r', encoding='utf-8-sig', newline='') as handle:
         reader = csv.DictReader(handle)
         fields = reader.fieldnames or []
         required = [key_column, source_column] + ([target_column] if target_column else [])

@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.1
+## Funkcje wersji 0.2
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
@@ -71,3 +71,15 @@ Benchmark wykazał, że najwydajniejszą spośród badanych metod była wielopro
 
 Wyniki są zgodne z możliwością omijania ograniczeń GIL przez wykorzystanie osobnych procesów. W standardowym Pythonie GIL ogranicza równoległe wykonywanie kodu Pythona przez wątki w obrębie jednego interpretera.
 
+
+## Import i eksport w GUI (v0.2)
+
+1. Wybierz **Plik → Nowy projekt** i wskaż plik bazy projektu `.sqlite`, albo otwórz istniejący projekt przez **Plik → Otwórz**.
+2. Wybierz **Plik → Import** i wskaż plik `.txt`, `.csv` lub `.json`.
+   - TXT: każda linia staje się osobnym segmentem.
+   - JSON: obsługiwany jest słownik `key: source` albo lista obiektów zawierających `source` oraz opcjonalnie `key` i `target`.
+   - CSV: program wyświetla okno mapowania kolumn: **Klucz / ID**, **Tekst źródłowy** i opcjonalne **Tłumaczenie**.
+3. Po zakończeniu importu lista segmentów odświeża się automatycznie, a pasek stanu pokazuje liczbę zaimportowanych pozycji.
+4. Wybierz **Plik → Eksport**, aby zapisać tłumaczenie jako TXT, CSV lub JSON. Format jest określany na podstawie rozszerzenia pliku.
+
+Import i eksport są wykonywane przez pulę wątków I/O, natomiast GUI odpytuje stan operacji przez `QTimer`, dzięki czemu interfejs nie jest aktualizowany bezpośrednio z wątku roboczego.
