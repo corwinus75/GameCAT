@@ -80,6 +80,23 @@ class SegmentEditor(QWidget):
         self.segment_modified.emit(segment)
         self.next_segment()
 
+
+    def select_segment_by_id(self, segment_id: int, reveal: bool = True) -> bool:
+        """Select a segment by database id; optionally clear filters that hide it."""
+        def visible_row() -> int | None:
+            return next((i for i, segment in enumerate(self._visible) if segment.id == segment_id), None)
+
+        row = visible_row()
+        if row is None and reveal:
+            self.search_edit.clear()
+            self.status_filter.setCurrentText('ALL')
+            row = visible_row()
+        if row is None:
+            return False
+        self.segment_list.setCurrentRow(row)
+        self.target_edit.setFocus()
+        return True
+
     def next_segment(self) -> None:
         row=self.segment_list.currentRow()
         if row + 1 < self.segment_list.count(): self.segment_list.setCurrentRow(row + 1)

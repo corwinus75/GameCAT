@@ -56,3 +56,20 @@ def test_service_lists_projects_after_reopen(tmp_path: Path):
         assert [(p.id, p.name) for p in projects] == [(created.id, 'Demo')]
     finally:
         reopened.close()
+
+
+def test_service_exposes_project_glossary_for_qa(tmp_path: Path):
+    from gamecat.models.glossary import GlossaryEntry
+
+    service = ProjectService(tmp_path / 'project.sqlite')
+    project = service.create_project('Demo', 'en', 'pl', 'txt')
+    try:
+        service.glossary.create(GlossaryEntry('quest', 'zadanie', project_id=project.id))
+        service.glossary.create(GlossaryEntry('gold', 'złoto', project_id=None))
+        entries = service.list_glossary(project.id)
+        assert [(entry.source_term, entry.target_term) for entry in entries] == [
+            ('quest', 'zadanie'),
+            ('gold', 'złoto'),
+        ]
+    finally:
+        service.close()

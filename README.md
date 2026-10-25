@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.2
+## Funkcje wersji 0.3
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
@@ -83,3 +83,14 @@ Wyniki są zgodne z możliwością omijania ograniczeń GIL przez wykorzystanie 
 4. Wybierz **Plik → Eksport**, aby zapisać tłumaczenie jako TXT, CSV lub JSON. Format jest określany na podstawie rozszerzenia pliku.
 
 Import i eksport są wykonywane przez pulę wątków I/O, natomiast GUI odpytuje stan operacji przez `QTimer`, dzięki czemu interfejs nie jest aktualizowany bezpośrednio z wątku roboczego.
+
+## QA w GUI (v0.3)
+
+- Panel **QA → Bieżący** aktualizuje się automatycznie po wybraniu segmentu i po każdej zmianie pola Target.
+- Sprawdzane są m.in. brakujące i dodatkowe placeholdery/tagi, puste tłumaczenie, `Source == Target`, liczba nowych linii, spacje brzegowe, podwójne spacje oraz wymagane terminy z glosariusza.
+- Tokeny lokalizacyjne `{g|...}`, `{d|...}` i `{mf|...}` są porównywane strukturalnie, dzięki czemu przetłumaczona zawartość wewnątrz tokenu nie jest błędnie zgłaszana jako brak placeholdera.
+- Polecenie **QA → Sprawdź cały projekt** (`Ctrl+Shift+Q`) skanuje wszystkie segmenty i zapisuje wyniki w zakładce **Projekt**.
+- Dwukrotne kliknięcie wyniku QA projektu przenosi do odpowiedniego segmentu; jeśli segment był ukryty przez filtr lub wyszukiwanie, edytor automatycznie go ujawnia.
+- Panel glosariusza jest wczytywany razem z projektem i te same wpisy są używane przy walidacji pojedynczego segmentu i pełnego projektu.
+
+W v0.3 usunięto także wyścig przy jednoczesnym zapisie do SQLite z wątku autosave i z głównego wątku. Dostęp transakcyjny do współdzielonego połączenia jest serializowany blokadą `RLock`.

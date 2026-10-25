@@ -21,11 +21,13 @@ class ProjectRepository:
         project.id = cur.lastrowid
         return project
     def get(self, project_id: int) -> Project:
-        row = self.connection.execute('SELECT * FROM projects WHERE id=?', (project_id,)).fetchone()
+        with self.connection:
+            row = self.connection.execute('SELECT * FROM projects WHERE id=?', (project_id,)).fetchone()
         if row is None: raise KeyError(project_id)
         return Project(row['name'], row['source_language'], row['target_language'], row['source_format'], row['id'], _dt(row['created_at']), _dt(row['updated_at']))
     def list_all(self) -> list[Project]:
-        rows = self.connection.execute('SELECT id FROM projects ORDER BY id').fetchall()
+        with self.connection:
+            rows = self.connection.execute('SELECT id FROM projects ORDER BY id').fetchall()
         return [self.get(row['id']) for row in rows]
     def update(self, project: Project) -> None:
         if project.id is None: raise ValueError('project has no id')
@@ -47,11 +49,13 @@ class SegmentRepository:
         return Segment(row['source'], row['position'], row['key'], row['target'], row['status'], row['comment'], row['id'], row['project_id'], _dt(row['created_at']), _dt(row['updated_at']))
     def get(self, segment_id: int | None) -> Segment:
         if segment_id is None: raise KeyError(segment_id)
-        row = self.connection.execute('SELECT * FROM segments WHERE id=?', (segment_id,)).fetchone()
+        with self.connection:
+            row = self.connection.execute('SELECT * FROM segments WHERE id=?', (segment_id,)).fetchone()
         if row is None: raise KeyError(segment_id)
         return self._from_row(row)
     def list_for_project(self, project_id: int) -> list[Segment]:
-        rows = self.connection.execute('SELECT * FROM segments WHERE project_id=? ORDER BY position,id', (project_id,)).fetchall()
+        with self.connection:
+            rows = self.connection.execute('SELECT * FROM segments WHERE project_id=? ORDER BY position,id', (project_id,)).fetchall()
         return [self._from_row(r) for r in rows]
     def update(self, segment: Segment) -> None:
         if segment.id is None: raise ValueError('segment has no id')
@@ -69,9 +73,11 @@ class GlossaryRepository:
         entry.id = cur.lastrowid; return entry
     def list_for_project(self, project_id: int | None) -> list[GlossaryEntry]:
         if project_id is None:
-            rows = self.connection.execute('SELECT * FROM glossary ORDER BY id').fetchall()
+            with self.connection:
+                rows = self.connection.execute('SELECT * FROM glossary ORDER BY id').fetchall()
         else:
-            rows = self.connection.execute('SELECT * FROM glossary WHERE project_id=? OR project_id IS NULL ORDER BY id', (project_id,)).fetchall()
+            with self.connection:
+                rows = self.connection.execute('SELECT * FROM glossary WHERE project_id=? OR project_id IS NULL ORDER BY id', (project_id,)).fetchall()
         return [GlossaryEntry(r['source_term'], r['target_term'], r['description'], bool(r['case_sensitive']), r['id'], r['project_id']) for r in rows]
 
 
@@ -83,5 +89,6 @@ class TranslationMemoryRepository:
                                           (entry.source, entry.target, entry.source_language, entry.target_language, entry.origin_project, entry.created_at.isoformat()))
         entry.id = cur.lastrowid; return entry
     def list_all(self) -> list[TranslationMemoryEntry]:
-        rows = self.connection.execute('SELECT * FROM translation_memory ORDER BY id').fetchall()
+        with self.connection:
+            rows = self.connection.execute('SELECT * FROM translation_memory ORDER BY id').fetchall()
         return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]

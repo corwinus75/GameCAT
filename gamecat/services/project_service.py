@@ -4,7 +4,7 @@ from concurrent.futures import Future
 from gamecat.concurrency.io_workers import IOWorkerPool
 from gamecat.database.connection import open_database
 from gamecat.database.schema import initialize_schema
-from gamecat.database.repositories import ProjectRepository, SegmentRepository
+from gamecat.database.repositories import GlossaryRepository, ProjectRepository, SegmentRepository
 from gamecat.exporters.txt_exporter import export_txt
 from gamecat.exporters.csv_exporter import export_csv
 from gamecat.exporters.json_exporter import export_json
@@ -12,6 +12,7 @@ from gamecat.importers.txt_importer import import_txt
 from gamecat.importers.csv_importer import import_csv
 from gamecat.importers.json_importer import import_json
 from gamecat.models.project import Project
+from gamecat.models.glossary import GlossaryEntry
 from gamecat.models.segment import Segment
 from gamecat.exceptions import ImportFormatError
 
@@ -23,6 +24,7 @@ class ProjectService:
         initialize_schema(self.connection)
         self.projects = ProjectRepository(self.connection)
         self.segments = SegmentRepository(self.connection)
+        self.glossary = GlossaryRepository(self.connection)
         self.io = IOWorkerPool(max_io_workers)
 
     def create_project(self, name: str, source_language: str, target_language: str, source_format: str) -> Project:
@@ -40,6 +42,9 @@ class ProjectService:
         if project_id is None:
             return []
         return self.segments.list_for_project(project_id)
+
+    def list_glossary(self, project_id: int | None) -> list[GlossaryEntry]:
+        return self.glossary.list_for_project(project_id)
 
     def _import_file(
         self,

@@ -15,7 +15,7 @@ def test_extracts_placeholders_tags_and_game_tokens():
 
 def test_placeholder_mismatch():
     issues = validate_segment('Take {amount} gold.', 'Weź złoto.')
-    assert 'placeholder-mismatch' in codes(issues)
+    assert 'placeholder-missing' in codes(issues)
 
 
 def test_basic_qa_rules():
@@ -30,3 +30,22 @@ def test_glossary_required_term():
     glossary=[GlossaryEntry('quest','zadanie')]
     assert 'glossary-term' in codes(validate_segment('Complete the quest.', 'Ukończ misję.', glossary))
     assert 'glossary-term' not in codes(validate_segment('Complete the quest.', 'Ukończ zadanie.', glossary))
+
+
+def test_reports_missing_and_extra_tokens_separately():
+    issues = validate_segment('Take {amount} gold and %s.', 'Weź {wrong} złota i %s.')
+    issue_codes = [issue.code for issue in issues]
+    assert 'placeholder-missing' in issue_codes
+    assert 'placeholder-extra' in issue_codes
+    assert any('{amount}' in issue.message for issue in issues if issue.code == 'placeholder-missing')
+    assert any('{wrong}' in issue.message for issue in issues if issue.code == 'placeholder-extra')
+
+
+def test_preserves_game_localization_tokens_and_printf_positions():
+    source = '{g|king|queen} {d|hero} {mf|his|her} %1$s <b>text</b>'
+    target = '{g|król|królowa} {d|bohater} {mf|jego|jej} %1$s <b>tekst</b>'
+    # Game tokens are control structures whose complete token text may legitimately differ
+    # in translated alternatives, but their token type/count must be preserved.
+    issue_codes = codes(validate_segment(source, target))
+    assert 'placeholder-missing' not in issue_codes
+    assert 'placeholder-extra' not in issue_codes

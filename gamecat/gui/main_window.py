@@ -17,6 +17,8 @@ from gamecat.gui.segment_editor import SegmentEditor
 from gamecat.gui.tm_panel import TMPanel
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment
+from gamecat.qa.project_scan import scan_segments
+from gamecat.qa.validator import validate_segment
 from gamecat.services.project_service import ProjectService
 from gamecat.utils.decorators import requires_project
 
@@ -52,7 +54,9 @@ class MainWindow(QMainWindow):
                 dock,
             )
         self.tm_panel.target_selected.connect(self.segment_editor.target_edit.setPlainText)
-        self.segment_editor.segment_modified.connect(self._save_modified_segment)
+        self.segment_editor.segment_changed.connect(self._update_current_qa)
+        self.segment_editor.segment_modified.connect(self._on_segment_modified)
+        self.qa_panel.segment_requested.connect(self._select_qa_segment)
         self.setStatusBar(QStatusBar())
         self._build_actions()
 
@@ -80,11 +84,17 @@ class MainWindow(QMainWindow):
             exit_action,
         ):
             file_menu.addAction(action)
+
+        qa_menu = self.menuBar().addMenu('&QA')
+        self.run_project_qa_action = QAction('Sprawdź cały projekt', self)
+        self.run_project_qa_action.setShortcut(QKeySequence('Ctrl+Shift+Q'))
+        self.run_project_qa_action.triggered.connect(self._safe_run_project_qa)
+        qa_menu.addAction(self.run_project_qa_action)
         self._sync_actions()
 
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
-        for action in (self.import_action, self.export_action, self.save_action):
+        for action in (self.import_action, self.export_action, self.save_action, self.run_project_qa_action):
             action.setEnabled(enabled)
 
     def _replace_service(self, service: ProjectService | None) -> None:
@@ -130,6 +140,9 @@ class MainWindow(QMainWindow):
         self.current_project = persisted
         self.project_path = path
         self.segment_editor.set_segments([])
+        self.glossary_panel.set_entries([])
+        self.qa_panel.set_issues([])
+        self.qa_panel.clear_project_report()
         self.setWindowTitle(f'GameCAT — {persisted.name}')
         self.statusBar().showMessage(f'Projekt utworzony: {path}', 4000)
         self._sync_actions()
@@ -160,6 +173,8 @@ class MainWindow(QMainWindow):
         self._replace_service(service)
         self.current_project = project
         self.project_path = path
+        self.glossary_panel.set_entries(service.list_glossary(project.id))
+        self.qa_panel.clear_project_report()
         self.segment_editor.set_segments(segments)
         self.setWindowTitle(f'GameCAT — {project.name}')
         self.statusBar().showMessage(f'Otworzono: {path} ({len(segments)} segmentów)', 4000)
@@ -184,6 +199,42 @@ class MainWindow(QMainWindow):
             self.project_service.save_segment(segment)
         except Exception as exc:
             self.statusBar().showMessage(f'Błąd zapisu segmentu: {exc}', 5000)
+
+    def _glossary_for_current_project(self):
+        if self.project_service is None or self.current_project is None:
+            return []
+        return self.project_service.list_glossary(self.current_project.id)
+
+    def _update_current_qa(self, segment: Segment) -> None:
+        issues = validate_segment(segment.source, segment.target, self._glossary_for_current_project())
+        self.qa_panel.set_issues(issues)
+
+    def _on_segment_modified(self, segment: Segment) -> None:
+        self._save_modified_segment(segment)
+        self._update_current_qa(segment)
+
+    def _select_qa_segment(self, segment_id: int) -> None:
+        if not self.segment_editor.select_segment_by_id(segment_id, reveal=True):
+            self.statusBar().showMessage(f'Nie znaleziono segmentu ID {segment_id}.', 4000)
+
+    def _safe_run_project_qa(self) -> None:
+        try:
+            self.run_project_qa()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def run_project_qa(self) -> None:
+        if self.project_service is None or self.current_project is None:
+            raise RuntimeError('Project service is unavailable')
+        segments = self.project_service.list_segments(self.current_project.id)
+        glossary = self.project_service.list_glossary(self.current_project.id)
+        report = scan_segments(segments, glossary)
+        self.qa_panel.set_project_report(report)
+        self.statusBar().showMessage(
+            f'QA: {report.issue_count} problemów w {report.issue_segment_count} z {report.segment_count} segmentów.',
+            7000,
+        )
 
     def _watch_future(
         self,
@@ -253,6 +304,7 @@ class MainWindow(QMainWindow):
             assert self.project_service is not None
             assert self.current_project is not None
             all_segments = self.project_service.list_segments(self.current_project.id)
+            self.qa_panel.clear_project_report()
             self.segment_editor.set_segments(all_segments)
             self.statusBar().showMessage(
                 f'Zaimportowano {len(new_segments)} segmentów z {path.name}. Łącznie: {len(all_segments)}.',

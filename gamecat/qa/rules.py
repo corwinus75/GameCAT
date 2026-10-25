@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from collections import Counter
 from collections.abc import Iterable
+
 from gamecat.models.glossary import GlossaryEntry
-from gamecat.qa.patterns import extract_tokens
+from gamecat.qa.patterns import QAToken, extract_tokens
+
 
 @dataclass(frozen=True, slots=True)
 class QAIssue:
@@ -10,22 +12,47 @@ class QAIssue:
     message: str
 
 
+def _token_signature(token: QAToken) -> str:
+    """Return the invariant part of a localization token for QA comparison."""
+    if token.kind == 'brace':
+        for prefix in ('{g|', '{d|', '{mf|'):
+            if token.value.startswith(prefix):
+                return prefix
+    return token.value
+
+
+def _display_token(signature: str) -> str:
+    if signature in {'{g|', '{d|', '{mf|'}:
+        return f'{signature}…}}'
+    return signature
+
+
+def _token_counter(text: str) -> Counter[str]:
+    return Counter(_token_signature(token) for token in extract_tokens(text))
+
+
 def run_rules(source: str, target: str, glossary: Iterable[GlossaryEntry] = ()) -> list[QAIssue]:
     issues: list[QAIssue] = []
-    source_tokens = Counter(t.value for t in extract_tokens(source))
-    target_tokens = Counter(t.value for t in extract_tokens(target))
-    if source_tokens != target_tokens:
-        issues.append(QAIssue('placeholder-mismatch', 'Placeholder or tag set differs from source.'))
+    source_tokens = _token_counter(source)
+    target_tokens = _token_counter(target)
+
+    for token, count in (source_tokens - target_tokens).items():
+        suffix = f' (x{count})' if count > 1 else ''
+        issues.append(QAIssue('placeholder-missing', f'Brak placeholdera lub tagu: {_display_token(token)}{suffix}'))
+    for token, count in (target_tokens - source_tokens).items():
+        suffix = f' (x{count})' if count > 1 else ''
+        issues.append(QAIssue('placeholder-extra', f'Dodatkowy placeholder lub tag: {_display_token(token)}{suffix}'))
+
     if target == '':
-        issues.append(QAIssue('empty-target', 'Translation is empty.'))
+        issues.append(QAIssue('empty-target', 'Tłumaczenie jest puste.'))
     if source and source == target:
-        issues.append(QAIssue('source-equals-target', 'Source and target are identical.'))
+        issues.append(QAIssue('source-equals-target', 'Source i Target są identyczne.'))
     if source.count('\n') != target.count('\n'):
-        issues.append(QAIssue('newline-mismatch', 'Newline count differs from source.'))
+        issues.append(QAIssue('newline-mismatch', 'Liczba znaków nowej linii różni się od Source.'))
     if target and target != target.strip():
-        issues.append(QAIssue('edge-whitespace', 'Translation has leading or trailing whitespace.'))
+        issues.append(QAIssue('edge-whitespace', 'Tłumaczenie ma spację na początku lub końcu.'))
     if '  ' in target:
-        issues.append(QAIssue('double-space', 'Translation contains repeated spaces.'))
+        issues.append(QAIssue('double-space', 'Tłumaczenie zawiera podwójne spacje.'))
     for entry in glossary:
         src = source if entry.case_sensitive else source.casefold()
         needle = entry.source_term if entry.case_sensitive else entry.source_term.casefold()
@@ -33,5 +60,5 @@ def run_rules(source: str, target: str, glossary: Iterable[GlossaryEntry] = ()) 
             tgt = target if entry.case_sensitive else target.casefold()
             required = entry.target_term if entry.case_sensitive else entry.target_term.casefold()
             if required not in tgt:
-                issues.append(QAIssue('glossary-term', f'Required glossary term missing: {entry.target_term}'))
+                issues.append(QAIssue('glossary-term', f'Brak wymaganego terminu z glosariusza: {entry.target_term}'))
     return issues
