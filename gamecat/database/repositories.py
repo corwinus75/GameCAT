@@ -92,3 +92,17 @@ class TranslationMemoryRepository:
         with self.connection:
             rows = self.connection.execute('SELECT * FROM translation_memory ORDER BY id').fetchall()
         return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]
+    def list_for_languages(self, source_language: str, target_language: str) -> list[TranslationMemoryEntry]:
+        with self.connection:
+            rows = self.connection.execute(
+                'SELECT * FROM translation_memory WHERE source_language=? AND target_language=? ORDER BY id',
+                (source_language, target_language),
+            ).fetchall()
+        return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]
+    def contains_pair(self, source: str, target: str, source_language: str, target_language: str) -> bool:
+        with self.connection:
+            row = self.connection.execute(
+                'SELECT 1 FROM translation_memory WHERE source=? AND target=? AND source_language=? AND target_language=? LIMIT 1',
+                (source, target, source_language, target_language),
+            ).fetchone()
+        return row is not None

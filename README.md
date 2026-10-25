@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.3
+## Funkcje wersji 0.4
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
@@ -94,3 +94,21 @@ Import i eksport są wykonywane przez pulę wątków I/O, natomiast GUI odpytuje
 - Panel glosariusza jest wczytywany razem z projektem i te same wpisy są używane przy walidacji pojedynczego segmentu i pełnego projektu.
 
 W v0.3 usunięto także wyścig przy jednoczesnym zapisie do SQLite z wątku autosave i z głównego wątku. Dostęp transakcyjny do współdzielonego połączenia jest serializowany blokadą `RLock`.
+
+## Translation Memory i import tłumaczeń (v0.4)
+
+### Import tłumaczenia do istniejącego projektu
+
+Po zaimportowaniu tekstu źródłowego wybierz **Plik → Importuj tłumaczenie…**. Operacja aktualizuje wyłącznie pole **Target** istniejących segmentów — tekst **Source** pozostaje bez zmian.
+
+- **TXT** — kolejne linie są dopasowywane do segmentów według pozycji (`1 → 1`, `2 → 2`, itd.). Jeżeli plik ma więcej linii niż projekt, import zostaje przerwany, aby uniknąć przesunięcia tłumaczeń.
+- **CSV** — pojawia się okno mapowania. Można wybrać kolumnę **Klucz / ID** i kolumnę **Tłumaczenie**. Jeśli klucz nie zostanie wskazany, wiersze są dopasowywane według kolejności.
+- **JSON** — słownik `{ "KEY": "tłumaczenie" }` jest dopasowywany po kluczu. Lista może zawierać napisy (dopasowanie pozycyjne) albo obiekty z `target` oraz opcjonalnym `key` lub `position`.
+
+Niepuste zaimportowane tłumaczenie zmienia status segmentu `NEW` na `TRANSLATED`. Pasek stanu pokazuje liczbę zaktualizowanych i niedopasowanych pozycji.
+
+### Translation Memory w GUI
+
+Panel **TM** jest teraz aktywny. Po wybraniu segmentu program wyszukuje do pięciu podobnych wpisów pamięci dla pary językowej projektu. Dwukrotne kliknięcie sugestii wstawia jej Target do bieżącego segmentu.
+
+Aby zasilić pamięć tłumaczeniową, wybierz **TM → Dodaj tłumaczenia projektu do pamięci**. Do TM trafiają wyłącznie segmenty z niepustym Target. Identyczne pary Source/Target dla tej samej pary językowej nie są dodawane ponownie.

@@ -1,66 +1,54 @@
+from __future__ import annotations
+
 from pathlib import Path
 import sqlite3
 import threading
+from types import TracebackType
+from typing import Any
 
 
-class SynchronizedConnection(sqlite3.Connection):
-    """Serialize transactions on a connection shared between GameCAT threads.
+class ThreadSafeConnection:
+    """Small sqlite3 connection proxy that serializes transaction contexts across threads."""
 
-    The lock covers the *entire* `with connection:` transaction, including its
-    commit/rollback. Locking only individual SQL statements would still let
-    another thread change the connection's transaction state before commit.
-    """
+    def __init__(self, connection: sqlite3.Connection):
+        self._connection = connection
+        self._lock = threading.RLock()
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._db_lock = threading.RLock()
+    def __enter__(self) -> ThreadSafeConnection:
+        self._lock.acquire()
+        self._connection.__enter__()
+        return self
 
-    def __enter__(self):
-        self._db_lock.acquire()
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
         try:
-            return super().__enter__()
-        except BaseException:
-            self._db_lock.release()
-            raise
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        try:
-            return super().__exit__(exc_type, exc_value, traceback)
+            return self._connection.__exit__(exc_type, exc_value, traceback)
         finally:
-            self._db_lock.release()
+            self._lock.release()
 
-    def execute(self, sql, parameters=(), /):
-        with self._db_lock:
-            return super().execute(sql, parameters)
+    def execute(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+        return self._connection.execute(*args, **kwargs)
 
-    def executemany(self, sql, parameters, /):
-        with self._db_lock:
-            return super().executemany(sql, parameters)
+    def executescript(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+        with self._lock:
+            return self._connection.executescript(*args, **kwargs)
 
-    def executescript(self, sql_script, /):
-        with self._db_lock:
-            return super().executescript(sql_script)
+    def commit(self) -> None:
+        with self._lock:
+            self._connection.commit()
 
-    def commit(self):
-        with self._db_lock:
-            return super().commit()
-
-    def rollback(self):
-        with self._db_lock:
-            return super().rollback()
-
-    def close(self):
-        with self._db_lock:
-            return super().close()
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
 
 
-def open_database(path: Path) -> sqlite3.Connection:
-    """Open a thread-safe-for-GameCAT SQLite connection.
-
-    Only connections opened here receive transaction synchronization.
-    check_same_thread=False alone does NOT make shared transactions safe.
-    """
-    connection = sqlite3.connect(path, check_same_thread=False, factory=SynchronizedConnection)
+def open_database(path: Path) -> ThreadSafeConnection:
+    """Open a SQLite database configured for GameCAT and safe shared use by worker threads."""
+    connection = sqlite3.connect(path, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute('PRAGMA foreign_keys = ON')
-    return connection
+    return ThreadSafeConnection(connection)

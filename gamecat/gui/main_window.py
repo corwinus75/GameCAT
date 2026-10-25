@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QDockWidget, QMainWindow, QMessageBox, QStatusBar
 
 from gamecat.gui.csv_import_dialog import CsvImportDialog
+from gamecat.gui.csv_translation_import_dialog import CsvTranslationImportDialog
 from gamecat.gui.file_formats import export_format_from_path, normalized_export_path
 from gamecat.gui.glossary_panel import GlossaryPanel
 from gamecat.gui.project_dialog import ProjectDialog
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
             )
         self.tm_panel.target_selected.connect(self.segment_editor.target_edit.setPlainText)
         self.segment_editor.segment_changed.connect(self._update_current_qa)
+        self.segment_editor.segment_changed.connect(self._update_current_tm)
         self.segment_editor.segment_modified.connect(self._on_segment_modified)
         self.qa_panel.segment_requested.connect(self._select_qa_segment)
         self.setStatusBar(QStatusBar())
@@ -66,8 +68,10 @@ class MainWindow(QMainWindow):
         new_action.triggered.connect(self.new_project)
         open_action = QAction('Otwórz', self)
         open_action.triggered.connect(self.open_project_dialog)
-        self.import_action = QAction('Import', self)
+        self.import_action = QAction('Importuj plik źródłowy…', self)
         self.import_action.triggered.connect(self._safe_import)
+        self.import_translation_action = QAction('Importuj tłumaczenie…', self)
+        self.import_translation_action.triggered.connect(self._safe_import_translation)
         self.export_action = QAction('Eksport', self)
         self.export_action.triggered.connect(self._safe_export)
         self.save_action = QAction('Zapisz', self)
@@ -79,6 +83,7 @@ class MainWindow(QMainWindow):
             new_action,
             open_action,
             self.import_action,
+            self.import_translation_action,
             self.export_action,
             self.save_action,
             exit_action,
@@ -90,11 +95,16 @@ class MainWindow(QMainWindow):
         self.run_project_qa_action.setShortcut(QKeySequence('Ctrl+Shift+Q'))
         self.run_project_qa_action.triggered.connect(self._safe_run_project_qa)
         qa_menu.addAction(self.run_project_qa_action)
+
+        tm_menu = self.menuBar().addMenu('&TM')
+        self.sync_tm_action = QAction('Dodaj tłumaczenia projektu do pamięci', self)
+        self.sync_tm_action.triggered.connect(self._safe_sync_tm)
+        tm_menu.addAction(self.sync_tm_action)
         self._sync_actions()
 
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
-        for action in (self.import_action, self.export_action, self.save_action, self.run_project_qa_action):
+        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action):
             action.setEnabled(enabled)
 
     def _replace_service(self, service: ProjectService | None) -> None:
@@ -141,6 +151,7 @@ class MainWindow(QMainWindow):
         self.project_path = path
         self.segment_editor.set_segments([])
         self.glossary_panel.set_entries([])
+        self.tm_panel.set_matches([])
         self.qa_panel.set_issues([])
         self.qa_panel.clear_project_report()
         self.setWindowTitle(f'GameCAT — {persisted.name}')
@@ -174,6 +185,7 @@ class MainWindow(QMainWindow):
         self.current_project = project
         self.project_path = path
         self.glossary_panel.set_entries(service.list_glossary(project.id))
+        self.tm_panel.set_matches([])
         self.qa_panel.clear_project_report()
         self.segment_editor.set_segments(segments)
         self.setWindowTitle(f'GameCAT — {project.name}')
@@ -208,6 +220,31 @@ class MainWindow(QMainWindow):
     def _update_current_qa(self, segment: Segment) -> None:
         issues = validate_segment(segment.source, segment.target, self._glossary_for_current_project())
         self.qa_panel.set_issues(issues)
+
+    def _update_current_tm(self, segment: Segment) -> None:
+        if self.project_service is None or self.current_project is None:
+            self.tm_panel.set_matches([])
+            return
+        matches = self.project_service.find_tm_matches(
+            self.current_project, segment.source, limit=5, threshold=0.45
+        )
+        self.tm_panel.set_matches(matches)
+
+    def _safe_sync_tm(self) -> None:
+        try:
+            self.sync_project_to_tm()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def sync_project_to_tm(self) -> None:
+        if self.project_service is None or self.current_project is None:
+            raise RuntimeError('Project service is unavailable')
+        created = self.project_service.sync_project_to_tm(self.current_project)
+        segment = self.segment_editor.current_segment()
+        if segment is not None:
+            self._update_current_tm(segment)
+        self.statusBar().showMessage(f'TM: dodano {created} nowych par tłumaczeniowych.', 5000)
 
     def _on_segment_modified(self, segment: Segment) -> None:
         self._save_modified_segment(segment)
@@ -312,6 +349,64 @@ class MainWindow(QMainWindow):
             )
 
         self._watch_future(future, imported, 'Import')
+
+    def _safe_import_translation(self) -> None:
+        try:
+            self.import_translation()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def import_translation(self) -> None:
+        if self.project_service is None or self.current_project is None:
+            raise RuntimeError('Project service is unavailable')
+        if not self.project_service.list_segments(self.current_project.id):
+            QMessageBox.information(self, 'GameCAT', 'Najpierw zaimportuj plik źródłowy.')
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            'Importuj tłumaczenie',
+            filter='Obsługiwane pliki (*.txt *.csv *.json);;TXT (*.txt);;CSV (*.csv);;JSON (*.json)',
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        if path.suffix.casefold() not in {'.txt', '.csv', '.json'}:
+            QMessageBox.warning(self, 'GameCAT', f'Nieobsługiwany format pliku: {path.suffix or "brak rozszerzenia"}')
+            return
+
+        csv_columns: tuple[str | None, str] | None = None
+        if path.suffix.casefold() == '.csv':
+            try:
+                dialog = CsvTranslationImportDialog(path, self)
+            except (OSError, UnicodeError, ValueError) as exc:
+                QMessageBox.critical(self, 'GameCAT', f'Nie można odczytać nagłówka CSV:\n{exc}')
+                return
+            if not dialog.exec():
+                return
+            csv_columns = dialog.columns()
+            if csv_columns[0] is not None and csv_columns[0] == csv_columns[1]:
+                QMessageBox.warning(self, 'GameCAT', 'Kolumna klucza i tłumaczenia muszą być różne.')
+                return
+
+        self.statusBar().showMessage(f'Importowanie tłumaczenia: {path.name}...')
+        future = self.project_service.import_translation_file_async(
+            self.current_project, path, csv_columns
+        )
+
+        def imported(result) -> None:
+            assert self.project_service is not None
+            assert self.current_project is not None
+            rows = self.project_service.list_segments(self.current_project.id)
+            self.qa_panel.clear_project_report()
+            self.segment_editor.set_segments(rows)
+            self.statusBar().showMessage(
+                f'Import tłumaczenia: zaktualizowano {result.updated}/{result.total}; '
+                f'niedopasowane: {result.unmatched}.',
+                7000,
+            )
+
+        self._watch_future(future, imported, 'Import tłumaczenia')
 
     def _safe_export(self) -> None:
         try:
