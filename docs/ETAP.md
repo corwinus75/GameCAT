@@ -1,8 +1,8 @@
-# Etap 0.0.11
+# Etap 0.0.12
 
-**GIL**
+**GUI / PySide6**
 
-benchmark trzech strategii: sequential/threads/processes.
+okno, edytor i panele PySide6.
 
 Uruchom `python ..\smoke_check.py`, potem `python -m gamecat.cli --help`.
 

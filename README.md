@@ -1,14 +1,14 @@
-# GameCAT — wersja 0.0.11
+# GameCAT — wersja 0.0.12
 
 
-Nowość tej wersji: **GIL** — benchmark trzech strategii: sequential/threads/processes.
-Kod dodany w: `benchmarks/gil_benchmark.py`.
+Nowość tej wersji: **GUI / PySide6** — okno, edytor i panele PySide6.
+Kod dodany w: `gamecat/gui/main_window.py`.
 
 ## Uruchomienie
 
 - Python >=3.12.
 - Do interfejsu CLI: brak zewnętrznych zależności (w etapach bez GUI i GIL).
-- Dla benchmarku(mathploitlib): `pip install -r requirements.txt`.
+- Dla GUI i benchmarku(mathploitlib): `pip install -r requirements.txt`.
 - Wywołanie pomocy: `python -m gamecat.cli --help`.
 
 `python -m gamecat.cli --db demo.sqlite new Demo`
@@ -41,26 +41,30 @@ Kod dodany w: `benchmarks/gil_benchmark.py`.
 
 - GIL:
 
-- `python benchmarks/gil_benchmark.py --quick` (wymaga zainstalowanego matplotlib tylko do własnych wykresów).
+`python benchmarks/gil_benchmark.py --quick` (wymaga zainstalowanego matplotlib tylko do własnych wykresów).
+ 
+- GUI:
+
+`python main.py` (PySide6); uwaga: GUI odziedziczone z 0.1 ma operacje importu/eksportu i zapisu w postaci demonstracyjnych komunikatów — pełny workflow działa przez CLI.
 
 ## Mapowanie wymagań i kolejnych etapów
 
 | Etap | Wymaganie | Wdrożone | Główne miejsce |
-|---:|---|:---:|---|
-| 1 | Dekorator funkcji | TAK | gamecat/utils/decorators.py |
-| 2 | Dekorator z parametrami | TAK | gamecat/utils/decorators.py |
-| 3 | Dekorator metody z self | TAK | gamecat/services/project_service.py |
-| 4 | @property i setter | TAK | gamecat/models/segment.py |
-| 5 | Iterator | TAK | gamecat/utils/iterators.py |
-| 6 | Generatory | TAK | gamecat/utils/generators.py |
-| 7 | Regex z nazwanymi grupami | TAK | gamecat/qa/patterns.py |
-| 8 | Wątki / ThreadPoolExecutor | TAK | gamecat/concurrency/io_workers.py |
-| 9 | Queue / Lock | TAK | gamecat/concurrency/save_queue.py |
-| 10 | Procesy / ProcessPoolExecutor | TAK | gamecat/tm/parallel_matcher.py |
-| 11 | GIL | TAK | benchmarks/gil_benchmark.py |
-| 12 | GUI / PySide6 | — | — |
-| 13 | Testy | — | — |
-| 14 | Logging | — | — |
+|---:|---|:--------:|---|
+| 1 | Dekorator funkcji |   TAK    | gamecat/utils/decorators.py |
+| 2 | Dekorator z parametrami |   TAK    | gamecat/utils/decorators.py |
+| 3 | Dekorator metody z self |   TAK    | gamecat/services/project_service.py |
+| 4 | @property i setter |   TAK    | gamecat/models/segment.py |
+| 5 | Iterator |   TAK    | gamecat/utils/iterators.py |
+| 6 | Generatory |   TAK    | gamecat/utils/generators.py |
+| 7 | Regex z nazwanymi grupami |   TAK    | gamecat/qa/patterns.py |
+| 8 | Wątki / ThreadPoolExecutor |   TAK    | gamecat/concurrency/io_workers.py |
+| 9 | Queue / Lock |   TAK    | gamecat/concurrency/save_queue.py |
+| 10 | Procesy / ProcessPoolExecutor |   TAK    | gamecat/tm/parallel_matcher.py |
+| 11 | GIL |   TAK    | benchmarks/gil_benchmark.py |
+| 12 | GUI / PySide6 |     TAK     | gamecat/gui/main_window.py |
+| 13 | Testy |    —     | — |
+| 14 | Logging |    —     | — |
 
 ## Sprawdzanie
 
