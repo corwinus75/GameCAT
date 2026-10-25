@@ -1,1 +1,1 @@
-"""GameCAT — etapowa rekonstrukcja."""
+"""Advanced Python utilities."""

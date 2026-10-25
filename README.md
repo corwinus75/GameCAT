@@ -1,73 +1,73 @@
-# GameCAT — wersja 0.0.14
+# GameCAT
 
+GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-Nowość tej wersji: **Logging** — konfiguracja pliku dziennika i stderr.
-Kod dodany w: `gamecat/logging_config.py`.
+## Funkcje wersji 0.1
 
-## Uruchomienie
+- projekty tłumaczeniowe i segmenty Source/Target,
+- SQLite,
+- import i eksport TXT/CSV/JSON,
+- statusy `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED`,
+- QA placeholderów, tagów, spacji i terminologii,
+- glosariusz,
+- Translation Memory z fuzzy matching,
+- matcher równoległy `ProcessPoolExecutor`,
+- zadania I/O przez `ThreadPoolExecutor`,
+- autosave z `Queue` i `Lock`,
+- GUI PySide6,
+- benchmark GIL: sequential / threads / processes.
 
-- Python >=3.12.
-- Do interfejsu CLI: brak zewnętrznych zależności (w etapach bez GUI i GIL).
-- Dla GUI, benchmarku(mathploitlib) i testów: `pip install -r requirements.txt`.
-- Wywołanie pomocy: `python -m gamecat.cli --help`.
+## Wymagania
 
-`python -m gamecat.cli --db demo.sqlite new Demo`
+- Python 3.12+
+- PySide6
+- pytest
+- matplotlib
 
-`python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.txt`
+Instalacja:
 
-`python -m gamecat.cli --db demo.sqlite list 1`
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
 
-`python -m gamecat.cli --db demo.sqlite translate 1 1 "Witaj!"`
+Testy:
 
-`python -m gamecat.cli --db demo.sqlite export 1 tlumaczenie.txt`
+```bash
+pytest -v
+```
 
-- CSV/JSON:
+Benchmark:
 
-`python -m gamecat.cli --db demo.sqlite import 1 sample_data/sample.csv`
+```bash
+python benchmarks/gil_benchmark.py
+```
 
-`python -m gamecat.cli --db demo.sqlite export 1 wynik.json`
+## Mapowanie wymagań zaliczeniowych
 
-- QA:  oraz słownik:
+| Zagadnienie | Gdzie w kodzie |
+|---|---|
+| Dekorator funkcji | `gamecat/utils/decorators.py -> measure_time()` |
+| Dekorator z parametrami | `gamecat/utils/decorators.py -> retry(attempts, delay)` |
+| Dekorator metody korzystający z `self` | `gamecat/utils/decorators.py -> requires_project()` + `gamecat/gui/main_window.py` |
+| `@property` + setter | `gamecat/models/segment.py -> Segment.target`, `Segment.status` |
+| Iterator | `gamecat/utils/iterators.py -> SegmentIterator` |
+| Generator / wyrażenie generujące | `gamecat/utils/generators.py`, importer TXT, matcher TM |
+| Regex z grupami nazwanymi | `gamecat/qa/patterns.py -> BRACE_RE`, `PRINTF_OR_TAG_RE` |
+| Wątki | `gamecat/concurrency/io_workers.py -> ThreadPoolExecutor` |
+| Synchronizacja Queue/Lock | `gamecat/concurrency/save_queue.py -> SaveQueue` |
+| Procesy | `gamecat/tm/parallel_matcher.py -> ProcessPoolExecutor` |
+| GIL | `benchmarks/gil_benchmark.py` |
+| GUI | `gamecat/gui/` |
+| Testy | `tests/` |
+| Logging | `gamecat/logging_config.py` |
 
-`python -m gamecat.cli --db demo.sqlite qa 1 1`
+## Wnioski z benchmarku GIL
 
-`python -m gamecat.cli --db demo.sqlite glossary-add 1 quest zadanie`
+Benchmark wykazał, że najwydajniejszą spośród badanych metod była wieloprocesowość, osiągając niemal dwukrotne przyspieszenie względem wykonywania sekwencyjnego.
 
-- TM: 
+Wyniki są zgodne z możliwością omijania ograniczeń GIL przez wykorzystanie osobnych procesów. W standardowym Pythonie GIL ogranicza równoległe wykonywanie kodu Pythona przez wątki w obrębie jednego interpretera.
 
-`python -m gamecat.cli --db demo.sqlite tm-add 1 "Hello" "Cześć"`
-
-`python -m gamecat.cli --db demo.sqlite tm-search 1 "Hello"`.
-
-- GIL:
-
-`python benchmarks/gil_benchmark.py --quick` (wymaga zainstalowanego matplotlib tylko do własnych wykresów).
- 
-- GUI:
-
-`python main.py` (PySide6); uwaga: GUI ma operacje importu/eksportu i zapisu w postaci demonstracyjnych komunikatów — pełny workflow działa przez CLI.
-
-- Dziennik: po starcie GUI logowanie do `gamecat.log`.
-
-## Mapowanie wymagań i kolejnych etapów
-
-| Etap | Wymaganie | Wdrożone | Główne miejsce                     |
-|---:|---|:--------:|------------------------------------|
-| 1 | Dekorator funkcji |   TAK    | gamecat/utils/decorators.py        |
-| 2 | Dekorator z parametrami |   TAK    | gamecat/utils/decorators.py        |
-| 3 | Dekorator metody z self |   TAK    | gamecat/services/project_service.py |
-| 4 | @property i setter |   TAK    | gamecat/models/segment.py          |
-| 5 | Iterator |   TAK    | gamecat/utils/iterators.py         |
-| 6 | Generatory |   TAK    | gamecat/utils/generators.py        |
-| 7 | Regex z nazwanymi grupami |   TAK    | gamecat/qa/patterns.py             |
-| 8 | Wątki / ThreadPoolExecutor |   TAK    | gamecat/concurrency/io_workers.py  |
-| 9 | Queue / Lock |   TAK    | gamecat/concurrency/save_queue.py  |
-| 10 | Procesy / ProcessPoolExecutor |   TAK    | gamecat/tm/parallel_matcher.py     |
-| 11 | GIL |   TAK    | benchmarks/gil_benchmark.py        |
-| 12 | GUI / PySide6 |   TAK    | gamecat/gui/main_window.py         |
-| 13 | Testy |   TAK    | tests/                             |
-| 14 | Logging |   TAK    | gamecat/logging_config.py                                   |
-
-## Sprawdzanie
-
-`python -m pytest -q` — testy projektu

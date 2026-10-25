@@ -1,1 +1,1 @@
-"""Models for gamecat."""
+"""Domain models."""

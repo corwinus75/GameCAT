@@ -1,1 +1,1 @@
-"""database"""
+"""SQLite persistence."""
