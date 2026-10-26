@@ -1,9 +1,10 @@
 from __future__ import annotations
 from pathlib import Path
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from gamecat.concurrency.io_workers import IOWorkerPool
 from gamecat.concurrency.save_queue import SaveQueue
 from gamecat.database.connection import open_database
@@ -241,6 +242,50 @@ class ProjectService:
                         ))
             self.translation_memory.create_unique_many(new_entries)
         return count
+
+    def replace_targets(
+        self, project: Project, replacements: Mapping[int, str], *,
+        include_reviewed: bool = False,
+    ) -> int:
+        """Atomically replace targets within one project after draining pending autosaves.
+
+        All ids and statuses are verified before any update. No Source is modified.
+        """
+        if project.id is None:
+            raise ValueError('Project must be persisted before batch replacement')
+        if not replacements:
+            return 0
+        if any(not isinstance(key, int) or not isinstance(value, str)
+               for key, value in replacements.items()):
+            raise ValueError('Replacement mapping must contain segment ids and text targets')
+        self.flush_saves()
+        with self.connection:
+            ids = list(replacements)
+            rows = []
+            for segment_id in ids:
+                row = self.connection.execute(
+                    'SELECT project_id, status, target FROM segments WHERE id=?', (segment_id,)
+                ).fetchone()
+                if row is None or row['project_id'] != project.id:
+                    raise ValueError(f'Segment {segment_id} does not belong to the selected project')
+                status = SegmentStatus(row['status'])
+                if not include_reviewed and status in {SegmentStatus.REVIEWED, SegmentStatus.APPROVED}:
+                    raise ValueError('Cannot replace reviewed or approved segments without explicit consent')
+                target = replacements[segment_id]
+                if row['target'] == target:
+                    continue
+                if not target.strip():
+                    next_status = SegmentStatus.NEW
+                elif status in {SegmentStatus.NEW, SegmentStatus.REVIEWED, SegmentStatus.APPROVED}:
+                    # Any edited reviewed text must be reviewed again.
+                    next_status = SegmentStatus.TRANSLATED
+                else:
+                    next_status = status
+                rows.append((target, next_status.value, datetime.now(timezone.utc).isoformat(), segment_id, project.id))
+            self.connection.executemany(
+                'UPDATE segments SET target=?,status=?,updated_at=? WHERE id=? AND project_id=?', rows
+            )
+            return len(rows)
 
     def project_progress(self, project_id: int | None) -> ProjectProgress:
         if project_id is None:

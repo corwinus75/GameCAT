@@ -2,9 +2,10 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.8.0
+## Funkcje wersji 0.9.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
+- wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
 - SQLite,
 - import i eksport TXT/CSV/JSON,
 - workflow statusów `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED` z ręczną i masową zmianą, filtrami, skrótami i licznikiem postępu,
@@ -67,10 +68,15 @@ Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje
 | Wątki + `Queue` / `Lock` / `RLock` | `gamecat/concurrency/save_queue.py → SaveQueue`, `concurrency/io_workers.py → IOWorkerPool`, `database/connection.py → ThreadSafeConnection` | autosave w tle, import/eksport bez blokowania GUI |
 | Procesy | `gamecat/tm/analysis.py → analyze()` (`ProcessPoolExecutor`, kontekst `spawn`, `initializer`) | **TM → Analiza projektu względem TM** (`Ctrl+Shift+A`) |
 | Pomiar GIL | `benchmarks/gil_benchmark.py` | ta sama analiza TM: sekwencyjnie / wątki / procesy |
+| Zaawansowane wyszukiwanie i regex (0.9) | `gamecat/search/operations.py` → `filter_segments`, `preview_replacements` | filtry, zamiana Target, sortowanie |
 | GUI | `gamecat/gui/` | PySide6 |
 | Eksport/import TM 0.8 | `gamecat/tm/exchange.py`, `ProjectService.import_tm_file` | transakcyjny import TM, eksport CSV/JSON |
 | Testy | `tests/` (pytest) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
+
+## Nowości w wersji 0.9
+
+Skróty: **Ctrl+F** wyszukiwanie, **Ctrl+H** zamiana w Target z podglądem, **F8 / Shift+F8** następny/poprzedni błąd QA, **Ctrl+Alt+strzałka dół/góra** następny/poprzedni segment bez tłumaczenia. Zaawansowane filtry działają łącznie. Szczegóły, zasady ochrony recenzji i zachowania masowego zastępowania: **[Dokumentacja 0.9](docs/releases/0.9.md)**.
 
 ## Obsługa TM w wersji 0.8
 

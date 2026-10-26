@@ -13,6 +13,7 @@ from gamecat.gui.csv_translation_import_dialog import CsvTranslationImportDialog
 from gamecat.gui.file_formats import export_format_from_path, normalized_export_path
 from gamecat.gui.glossary_panel import GlossaryPanel
 from gamecat.gui.project_dialog import ProjectDialog
+from gamecat.gui.replace_dialog import BatchReplaceDialog
 from gamecat.gui.qa_panel import QAPanel
 from gamecat.gui.segment_editor import SegmentEditor
 from gamecat.gui.tm_panel import TMPanel
@@ -61,6 +62,7 @@ class MainWindow(QMainWindow):
         self.segment_editor.segment_changed.connect(self._update_current_tm)
         self.segment_editor.segment_changed.connect(self._update_glossary_context)
         self.segment_editor.segment_modified.connect(self._on_segment_modified)
+        self.segment_editor.search_context_requested.connect(self._refresh_search_context)
         self.segment_editor.segments_status_modified.connect(self._on_segments_status_modified)
         self.qa_panel.segment_requested.connect(self._select_qa_segment)
         self.glossary_panel.term_create_requested.connect(self._safe_create_glossary_term)
@@ -111,6 +113,29 @@ class MainWindow(QMainWindow):
         ):
             file_menu.addAction(action)
 
+        edit_menu = self.menuBar().addMenu('&Edycja')
+        self.replace_action = QAction('Zamień w Target…', self)
+        self.replace_action.setShortcut(QKeySequence('Ctrl+H'))
+        self.replace_action.triggered.connect(self._safe_replace_targets)
+        edit_menu.addAction(self.replace_action)
+        edit_menu.addSeparator()
+        self.next_untranslated_action = QAction('Następny bez tłumaczenia', self)
+        self.next_untranslated_action.setShortcut(QKeySequence('Ctrl+Alt+Down'))
+        self.next_untranslated_action.triggered.connect(lambda: self._jump_to_segment('untranslated'))
+        edit_menu.addAction(self.next_untranslated_action)
+        self.prev_untranslated_action = QAction('Poprzedni bez tłumaczenia', self)
+        self.prev_untranslated_action.setShortcut(QKeySequence('Ctrl+Alt+Up'))
+        self.prev_untranslated_action.triggered.connect(lambda: self._jump_to_segment('untranslated', backwards=True))
+        edit_menu.addAction(self.prev_untranslated_action)
+        self.next_qa_action = QAction('Następny błąd QA', self)
+        self.next_qa_action.setShortcut(QKeySequence('F8'))
+        self.next_qa_action.triggered.connect(lambda: self._jump_to_segment('qa_errors'))
+        edit_menu.addAction(self.next_qa_action)
+        self.prev_qa_action = QAction('Poprzedni błąd QA', self)
+        self.prev_qa_action.setShortcut(QKeySequence('Shift+F8'))
+        self.prev_qa_action.triggered.connect(lambda: self._jump_to_segment('qa_errors', backwards=True))
+        edit_menu.addAction(self.prev_qa_action)
+
         qa_menu = self.menuBar().addMenu('&QA')
         self.run_project_qa_action = QAction('Sprawdź cały projekt', self)
         self.run_project_qa_action.setShortcut(QKeySequence('Ctrl+Shift+Q'))
@@ -160,7 +185,7 @@ class MainWindow(QMainWindow):
 
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
-        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action, self.attach_tm_action, self.internal_tm_action, self.import_tm_action, self.export_tm_action):
+        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action, self.attach_tm_action, self.internal_tm_action, self.import_tm_action, self.export_tm_action, self.replace_action, self.next_untranslated_action, self.prev_untranslated_action, self.next_qa_action, self.prev_qa_action):
             action.setEnabled(enabled)
         for action in self.status_actions:
             action.setEnabled(enabled)
@@ -207,6 +232,7 @@ class MainWindow(QMainWindow):
         self._replace_service(service)
         self.current_project = persisted
         self.project_path = path
+        self.segment_editor.clear_filters()
         self.segment_editor.set_segments([])
         self.glossary_panel.set_terms([])
         self.tm_panel.set_matches([])
@@ -250,6 +276,7 @@ class MainWindow(QMainWindow):
         self.tm_panel.set_threshold(service.get_tm_threshold(project))
         self.tm_panel.set_storage_path(service.tm_database_path(project))
         self.qa_panel.clear_project_report()
+        self.segment_editor.clear_filters()
         self.segment_editor.set_segments(segments)
         self._refresh_progress()
         self.setWindowTitle(f'GameCAT — {project.name}')
@@ -319,6 +346,7 @@ class MainWindow(QMainWindow):
             self._reload_segments()
             return
         self._refresh_progress()
+        self._refresh_search_context()
         selected = self.segment_editor.current_segment()
         if selected is not None:
             self._update_current_tm(selected)
@@ -339,6 +367,7 @@ class MainWindow(QMainWindow):
 
     def _after_glossary_change(self, message: str) -> None:
         self._refresh_glossary()
+        self._refresh_search_context()
         self.qa_panel.clear_project_report()
         segment = self.segment_editor.current_segment()
         if segment is not None:
@@ -497,6 +526,7 @@ class MainWindow(QMainWindow):
             return
         self.tm_panel.set_storage_path(path)
         self._refresh_tm_context()
+        self._refresh_search_context()
         self.statusBar().showMessage(f'Aktywna zewnętrzna TM: {path}', 7000)
 
     def _safe_use_project_tm_database(self) -> None:
@@ -509,6 +539,7 @@ class MainWindow(QMainWindow):
             return
         self.tm_panel.set_storage_path(None)
         self._refresh_tm_context()
+        self._refresh_search_context()
         self.statusBar().showMessage('Aktywna pamięć TM w projekcie.', 5000)
 
     def _safe_import_tm(self) -> None:
@@ -530,6 +561,7 @@ class MainWindow(QMainWindow):
 
     def _tm_imported(self, count: int) -> None:
         self._refresh_tm_context()
+        self._refresh_search_context()
         self.statusBar().showMessage(f'TM: dodano {count} nowych par (bez duplikatów).', 6000)
 
     def _safe_export_tm(self) -> None:
@@ -579,6 +611,7 @@ class MainWindow(QMainWindow):
         if self.project_service is None or self.current_project is None:
             return
         self.segment_editor.set_segments(self.project_service.list_segments(self.current_project.id))
+        self._refresh_search_context()
         self._refresh_progress()
         self.qa_panel.clear_project_report()
 
@@ -590,6 +623,7 @@ class MainWindow(QMainWindow):
         segment = self.segment_editor.current_segment()
         if segment is not None:
             self._update_current_tm(segment)
+        self._refresh_search_context()
         self.statusBar().showMessage(f'TM: dodano {created} nowych par tłumaczeniowych.', 5000)
 
     def _on_segment_modified(self, segment: Segment) -> None:
@@ -612,10 +646,77 @@ class MainWindow(QMainWindow):
         assert self.project_service is not None and self.current_project is not None
         report = self.project_service.run_project_qa(self.current_project)
         self.qa_panel.set_project_report(report)
+        self._refresh_search_context()
         self.statusBar().showMessage(
             f'QA: {report.issue_count} problemów w {report.issue_segment_count} z {report.segment_count} segmentów.',
             7000,
         )
+
+    def _refresh_search_context(self, *_args, force_qa: bool = False) -> None:
+        """Calculate quality indexes only when a filter/navigation needs them."""
+        if self.project_service is None or self.current_project is None:
+            self.segment_editor.set_search_context(qa_error_ids=set(), tm_match_ids=set())
+            return
+        quality = self.segment_editor.quality_filter.currentData()
+        kwargs: dict[str, set[int]] = {}
+        if force_qa or quality == 'qa_errors':
+            glossary = self.project_service.list_glossary(self.current_project.id)
+            kwargs['qa_error_ids'] = {
+                segment.id for segment in self.segment_editor.all_segments()
+                if segment.id is not None and validate_segment(segment.source, segment.target, glossary)
+            }
+        if quality == 'tm_match':
+            project = self.current_project
+            tm_sources = {
+                entry.source for entry in self.project_service.translation_memory.list_for_languages(
+                    project.source_language, project.target_language
+                )
+            }
+            kwargs['tm_match_ids'] = {
+                segment.id for segment in self.segment_editor.all_segments()
+                if segment.id is not None and segment.source in tm_sources
+            }
+        self.segment_editor.set_search_context(**kwargs)
+
+    def _jump_to_segment(self, kind: str, *, backwards: bool = False) -> None:
+        if self.current_project is None:
+            return
+        current = self.segment_editor.current_segment()
+        anchor_id = current.id if current is not None else None
+        if kind == 'qa_errors':
+            self._refresh_search_context(force_qa=True)
+        if not self.segment_editor.jump_to_next(kind, backwards=backwards, anchor_id=anchor_id):
+            self.statusBar().showMessage('Nie znaleziono pasującego segmentu.', 3500)
+
+    def _safe_replace_targets(self) -> None:
+        try:
+            self.replace_targets()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można zamienić tekstu:\n{exc}')
+
+    @requires_project
+    def replace_targets(self) -> None:
+        """Apply previewed changes to Target only, never silently to reviewed segments."""
+        assert self.project_service is not None and self.current_project is not None
+        if not self.segment_editor.search_valid:
+            QMessageBox.warning(self, 'GameCAT', 'Popraw nieprawidłowy wzorzec wyszukiwania.')
+            return
+        if not self.segment_editor.visible_segments():
+            QMessageBox.information(self, 'GameCAT', 'Brak widocznych segmentów do zamiany.')
+            return
+        dialog = BatchReplaceDialog(
+            self.segment_editor.visible_segments(), self.segment_editor.selected_segments(), self
+        )
+        if not dialog.exec():
+            return
+        changes = dialog.replacements()
+        if not changes:
+            return
+        changed = self.project_service.replace_targets(
+            self.current_project, changes, include_reviewed=dialog.include_reviewed
+        )
+        self._reload_segments()
+        self.statusBar().showMessage(f'Zmieniono Target w {changed} segmentach.', 6000)
 
     def _watch_future(
         self,
@@ -687,6 +788,7 @@ class MainWindow(QMainWindow):
             all_segments = self.project_service.list_segments(self.current_project.id)
             self.qa_panel.clear_project_report()
             self.segment_editor.set_segments(all_segments)
+            self._refresh_search_context()
             self._refresh_progress()
             self.statusBar().showMessage(
                 f'Zaimportowano {len(new_segments)} segmentów z {path.name}. Łącznie: {len(all_segments)}.',
@@ -745,6 +847,7 @@ class MainWindow(QMainWindow):
             rows = self.project_service.list_segments(self.current_project.id)
             self.qa_panel.clear_project_report()
             self.segment_editor.set_segments(rows)
+            self._refresh_search_context()
             self._refresh_progress()
             self.statusBar().showMessage(
                 f'Import tłumaczenia: zaktualizowano {result.updated}/{result.total}; '
