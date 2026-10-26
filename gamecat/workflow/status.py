@@ -11,6 +11,15 @@ def confirmed_translation_status(status: SegmentStatus) -> SegmentStatus:
     return SegmentStatus.TRANSLATED if status is SegmentStatus.NEW else status
 
 
+def status_after_target_edit(status: SegmentStatus, before: str, after: str) -> SegmentStatus:
+    """Invalidate previous review on a real manual edit; empty translations become NEW."""
+    if before == after:
+        return status
+    if not after.strip():
+        return SegmentStatus.NEW
+    return SegmentStatus.TRANSLATED
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectProgress:
     """Exclusive status counts plus cumulative workflow completion metrics."""

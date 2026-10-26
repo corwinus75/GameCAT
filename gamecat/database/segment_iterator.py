@@ -63,10 +63,10 @@ class SegmentBatchIterator:
     def _fetch_batch(self) -> None:
         position, segment_id = self._last_key
         with self._connection:
-            rows = self._connection.execute(
+            rows = self._connection.fetchall(
                 _BATCH_SQL,
                 (self._project_id, position, position, segment_id, self._batch_size),
-            ).fetchall()
+            )
         if not rows:
             return
         self.batches_fetched += 1

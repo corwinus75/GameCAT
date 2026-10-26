@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS glossary_translations (
 
 
 def _table_exists(connection, name: str) -> bool:
-    return connection.execute(
+    return connection.fetchone(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone() is not None
+    ) is not None
 
 
 def migrate_glossary_schema(connection: sqlite3.Connection) -> None:
@@ -41,10 +41,10 @@ def migrate_glossary_schema(connection: sqlite3.Connection) -> None:
         if not legacy_exists:
             return
 
-        rows = connection.execute(
+        rows = connection.fetchall(
             'SELECT id,project_id,source_term,target_term,description,case_sensitive '
             'FROM glossary ORDER BY id'
-        ).fetchall()
+        )
         grouped: dict[tuple[int, str, bool], dict[str, object]] = {}
         for row in rows:
             project_id = row['project_id']
@@ -80,10 +80,10 @@ def migrate_glossary_schema(connection: sqlite3.Connection) -> None:
             )
             term_id = cur.lastrowid
             if not term_id:
-                term_id = connection.execute(
+                term_id = connection.fetchone(
                     'SELECT id FROM glossary_terms WHERE project_id=? AND source_term=? AND case_sensitive=?',
                     (project_id, source, int(case_sensitive)),
-                ).fetchone()['id']
+                )['id']
             for target in state['targets']:
                 connection.execute(
                     'INSERT OR IGNORE INTO glossary_translations(term_id,target_term) VALUES(?,?)',

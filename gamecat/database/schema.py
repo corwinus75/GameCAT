@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS ai_project_settings (
 def migrate_ai_schema(connection: sqlite3.Connection) -> None:
     """Idempotent migration; never removes existing translation data."""
     with connection:
-        columns = {row['name'] for row in connection.execute('PRAGMA table_info(segments)').fetchall()}
+        columns = {row['name'] for row in connection.fetchall('PRAGMA table_info(segments)')}
         if 'ai_generated' not in columns:
             connection.execute('ALTER TABLE segments ADD COLUMN ai_generated INTEGER NOT NULL DEFAULT 0')
         connection.executescript(_AI_SETTINGS_SCHEMA)

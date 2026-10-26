@@ -39,12 +39,12 @@ class ProjectRepository:
         return project
     def get(self, project_id: int) -> Project:
         with self.connection:
-            row = self.connection.execute('SELECT * FROM projects WHERE id=?', (project_id,)).fetchone()
+            row = self.connection.fetchone('SELECT * FROM projects WHERE id=?', (project_id,))
         if row is None: raise KeyError(project_id)
         return Project(row['name'], row['source_language'], row['target_language'], row['source_format'], row['id'], _dt(row['created_at']), _dt(row['updated_at']))
     def list_all(self) -> list[Project]:
         with self.connection:
-            rows = self.connection.execute('SELECT id FROM projects ORDER BY id').fetchall()
+            rows = self.connection.fetchall('SELECT id FROM projects ORDER BY id')
         return [self.get(row['id']) for row in rows]
     def update(self, project: Project) -> None:
         if project.id is None: raise ValueError('project has no id')
@@ -82,12 +82,12 @@ class SegmentRepository:
     def get(self, segment_id: int | None) -> Segment:
         if segment_id is None: raise KeyError(segment_id)
         with self.connection:
-            row = self.connection.execute('SELECT * FROM segments WHERE id=?', (segment_id,)).fetchone()
+            row = self.connection.fetchone('SELECT * FROM segments WHERE id=?', (segment_id,))
         if row is None: raise KeyError(segment_id)
         return self._from_row(row)
     def list_for_project(self, project_id: int) -> list[Segment]:
         with self.connection:
-            rows = self.connection.execute('SELECT * FROM segments WHERE project_id=? ORDER BY position,id', (project_id,)).fetchall()
+            rows = self.connection.fetchall('SELECT * FROM segments WHERE project_id=? ORDER BY position,id', (project_id,))
         return [self._from_row(r) for r in rows]
     def update(self, segment: Segment) -> None:
         params = _update_params(segment)
@@ -109,16 +109,16 @@ class SegmentRepository:
 
     def count_for_project(self, project_id: int) -> int:
         with self.connection:
-            row = self.connection.execute('SELECT COUNT(*) FROM segments WHERE project_id=?', (project_id,)).fetchone()
+            row = self.connection.fetchone('SELECT COUNT(*) FROM segments WHERE project_id=?', (project_id,))
         return int(row[0])
 
     def status_counts(self, project_id: int) -> dict[SegmentStatus, int]:
         """Return exclusive workflow status counts for a project."""
         with self.connection:
-            rows = self.connection.execute(
+            rows = self.connection.fetchall(
                 'SELECT status, COUNT(*) AS count FROM segments WHERE project_id=? GROUP BY status',
                 (project_id,),
-            ).fetchall()
+            )
         counts = {status: 0 for status in SegmentStatus}
         for row in rows:
             counts[SegmentStatus(row['status'])] = int(row['count'])
@@ -130,12 +130,12 @@ class GlossaryRepository:
         self.connection = connection
 
     def _term_from_id(self, term_id: int) -> GlossaryTerm:
-        row = self.connection.execute('SELECT * FROM glossary_terms WHERE id=?', (term_id,)).fetchone()
+        row = self.connection.fetchone('SELECT * FROM glossary_terms WHERE id=?', (term_id,))
         if row is None:
             raise KeyError(term_id)
-        targets = [r['target_term'] for r in self.connection.execute(
+        targets = [r['target_term'] for r in self.connection.fetchall(
             'SELECT target_term FROM glossary_translations WHERE term_id=? ORDER BY id', (term_id,)
-        ).fetchall()]
+        )]
         return GlossaryTerm(row['source_term'], targets, row['description'], bool(row['case_sensitive']), row['id'], row['project_id'])
 
     def get_term(self, term_id: int) -> GlossaryTerm:
@@ -145,18 +145,18 @@ class GlossaryRepository:
     def get_by_identity(self, project_id: int, source_term: str, case_sensitive: bool) -> GlossaryTerm | None:
         source = source_term.strip()
         with self.connection:
-            row = self.connection.execute(
+            row = self.connection.fetchone(
                 'SELECT id FROM glossary_terms WHERE project_id=? AND source_term=? AND case_sensitive=?',
                 (project_id, source, int(case_sensitive)),
-            ).fetchone()
+            )
             return self._term_from_id(row['id']) if row else None
 
     def list_terms(self, project_id: int) -> list[GlossaryTerm]:
         with self.connection:
-            rows = self.connection.execute(
+            rows = self.connection.fetchall(
                 'SELECT id FROM glossary_terms WHERE project_id=? ORDER BY source_term COLLATE NOCASE,id',
                 (project_id,),
-            ).fetchall()
+            )
             return [self._term_from_id(r['id']) for r in rows]
 
     def search_terms(self, project_id: int, query: str) -> list[GlossaryTerm]:
@@ -213,10 +213,10 @@ class GlossaryRepository:
         new_terms = new_variants = duplicates = 0
         with self.connection:
             for incoming in terms:
-                row = self.connection.execute(
+                row = self.connection.fetchone(
                     'SELECT id FROM glossary_terms WHERE project_id=? AND source_term=? AND case_sensitive=?',
                     (project_id, incoming.source_term, int(incoming.case_sensitive)),
-                ).fetchone()
+                )
                 if row is None:
                     cur = self.connection.execute(
                         'INSERT INTO glossary_terms(project_id,source_term,description,case_sensitive) VALUES(?,?,?,?)',
@@ -226,7 +226,7 @@ class GlossaryRepository:
                 else:
                     term_id = int(row['id'])
                     if incoming.description:
-                        existing = self.connection.execute('SELECT description FROM glossary_terms WHERE id=?',(term_id,)).fetchone()['description']
+                        existing = self.connection.fetchone('SELECT description FROM glossary_terms WHERE id=?',(term_id,))['description']
                         if not existing:
                             self.connection.execute('UPDATE glossary_terms SET description=? WHERE id=?',(incoming.description,term_id))
                 for target in incoming.targets:
@@ -272,21 +272,21 @@ class TranslationMemoryRepository:
         entry.id = cur.lastrowid; return entry
     def list_all(self) -> list[TranslationMemoryEntry]:
         with self.connection:
-            rows = self.connection.execute('SELECT * FROM translation_memory ORDER BY id').fetchall()
+            rows = self.connection.fetchall('SELECT * FROM translation_memory ORDER BY id')
         return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]
     def list_for_languages(self, source_language: str, target_language: str) -> list[TranslationMemoryEntry]:
         with self.connection:
-            rows = self.connection.execute(
+            rows = self.connection.fetchall(
                 'SELECT * FROM translation_memory WHERE source_language=? AND target_language=? ORDER BY id',
                 (source_language, target_language),
-            ).fetchall()
+            )
         return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]
     def contains_pair(self, source: str, target: str, source_language: str, target_language: str) -> bool:
         with self.connection:
-            row = self.connection.execute(
+            row = self.connection.fetchone(
                 'SELECT 1 FROM translation_memory WHERE source=? AND target=? AND source_language=? AND target_language=? LIMIT 1',
                 (source, target, source_language, target_language),
-            ).fetchone()
+            )
         return row is not None
 
     def create_unique_many(self, entries: Iterable[TranslationMemoryEntry]) -> int:

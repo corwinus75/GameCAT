@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 1.0.0
+## Funkcje wersji 1.0.1
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
@@ -76,6 +76,18 @@ Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje
 | Testy | `tests/` (pytest) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
 
+## Stabilizacja 1.0.1
+
+Wydanie poprawkowe zgodne z bazami SQLite 1.0.0 (bez migracji schematu):
+
+- Ręczna zmiana Target unieważnia status `REVIEWED`/`APPROVED` i ustawia `TRANSLATED`; pusty Target ma status `NEW`. Wprowadzenie identycznego tekstu nie zmienia statusu, a licznik postępu i oznaczenia listy odświeżają się automatycznie.
+- `ThreadSafeConnection`: każda instrukcja `execute` jest synchronizowana przez `RLock`. Zapytania zwracające wiersze w repozytoriach, migracjach i `ProjectService` używają `fetchone`/`fetchall` obejmujących blokadą **wykonanie oraz pobranie wyniku**. Zachowano pojedynczą transakcję pod `with connection`.
+- Panel sugestii TM respektuje próg podobieństwa zapisany w projekcie; nie używa już stałej wartości 45%.
+- Przełączenie na TM projektu nie resetuje instrukcji, modelu ani cen w panelu OpenAI. Reset ustawień AI pozostaje prawidłowy przy tworzeniu **nowego** projektu.
+- Dodano testy regresyjne logiki workflow, izolacji odczytów SQLite oraz metod GUI niezależnie od PySide6. Testy integracyjne Qt pozostają przygotowane do uruchomienia na komputerze z PySide6.
+
+Zobacz [notatki wydania 1.0.1](docs/releases/1.0.1.md).
+
 W ramach finalizacji poprawiono również bezpieczeństwo importu już przetłumaczonego pliku: nowy Target unieważnia poprzednie zatwierdzenie (`REVIEWED`/`APPROVED`), natomiast import identycznego tekstu nie odbiera statusu. Klucz OpenAI API nie należy do danych projektu.
 
 ## Nowości w wersji 0.11
@@ -120,12 +132,12 @@ Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozost
 <!-- BENCHMARK:START -->
 | Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |
 |---|---:|---:|---:|---:|
-| Sekwencyjnie | 3.794 | 3.753 | 3.872 | 1.00x |
-| Wątki | 3.707 | 3.641 | 3.867 | 1.02x |
-| Procesy | 2.254 | 2.090 | 2.380 | 1.68x |
+| Sekwencyjnie | 0.260 | 0.237 | 0.269 | 1.00x |
+| Wątki | 0.244 | 0.233 | 0.264 | 1.06x |
+| Procesy | 1.152 | 1.139 | 1.223 | 0.23x |
 
-Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), seed 2026.  
-Środowisko: Python 3.14.0 (CPython), Windows 11, 22 rdzeni logicznych, GIL włączony.
+Dane: 160 segmentów × 240 wpisów TM, 2 workerów, 3 powtórzeń (mediana), seed 2026.  
+Środowisko: Python 3.13.5 (CPython), Linux 6.18.55, 5 rdzeni logicznych, GIL włączony.
 
 ![Wykres benchmarku](benchmarks/gil_benchmark.png)
 <!-- BENCHMARK:END -->

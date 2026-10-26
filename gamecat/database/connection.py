@@ -16,7 +16,11 @@ class ThreadSafeConnection:
 
     def __enter__(self) -> ThreadSafeConnection:
         self._lock.acquire()
-        self._connection.__enter__()
+        try:
+            self._connection.__enter__()
+        except BaseException:
+            self._lock.release()
+            raise
         return self
 
     def __exit__(
@@ -31,7 +35,18 @@ class ThreadSafeConnection:
             self._lock.release()
 
     def execute(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
-        return self._connection.execute(*args, **kwargs)
+        with self._lock:
+            return self._connection.execute(*args, **kwargs)
+
+    def fetchone(self, *args: Any, **kwargs: Any) -> sqlite3.Row | tuple | None:
+        """Execute a query and fetch a row under the same transaction lock."""
+        with self._lock:
+            return self._connection.execute(*args, **kwargs).fetchone()
+
+    def fetchall(self, *args: Any, **kwargs: Any) -> list[sqlite3.Row]:
+        """Execute a query and materialize rows while holding the transaction lock."""
+        with self._lock:
+            return self._connection.execute(*args, **kwargs).fetchall()
 
     def executemany(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
         with self._lock:

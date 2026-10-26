@@ -534,7 +534,7 @@ class MainWindow(QMainWindow):
             self.tm_panel.set_matches([])
             return
         matches = self.project_service.find_tm_matches(
-            self.current_project, segment.source, limit=5, threshold=0.45
+            self.current_project, segment.source, limit=5
         )
         self.tm_panel.set_matches(matches)
 
@@ -589,7 +589,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'GameCAT', f'Nie można zmienić TM:\n{exc}')
             return
         self.tm_panel.set_storage_path(None)
-        self.ai_panel.set_settings(AISettings())
         self._ai_preview_context = None
         self._refresh_tm_context()
         self._refresh_search_context()
@@ -682,6 +681,7 @@ class MainWindow(QMainWindow):
     def _on_segment_modified(self, segment: Segment) -> None:
         self._save_modified_segment(segment)
         self._update_current_qa(segment)
+        self._refresh_progress()
 
     def _select_qa_segment(self, segment_id: int) -> None:
         if not self.segment_editor.select_segment_by_id(segment_id, reveal=True):

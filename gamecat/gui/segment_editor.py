@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from gamecat.models.segment import Segment, SegmentStatus
-from gamecat.workflow.status import ProjectProgress, confirmed_translation_status
+from gamecat.workflow.status import ProjectProgress, confirmed_translation_status, status_after_target_edit
 from gamecat.search.operations import SearchQuery, filter_segments
 
 
@@ -272,11 +272,25 @@ class SegmentEditor(QWidget):
             return
         segment = self.current_segment()
         if segment is not None:
-            segment.target = self.target_edit.toPlainText()
+            updated_target = self.target_edit.toPlainText()
+            if updated_target == segment.target:
+                return
+            previous_status = segment.status
+            next_status = status_after_target_edit(previous_status, segment.target, updated_target)
+            segment.target = updated_target
+            segment.status = next_status
             item = self.segment_list.currentItem()
             if item is not None:
                 item.setText(self._item_text(segment))
+            if next_status is not previous_status:
+                self._loading = True
+                try:
+                    self.status_combo.setCurrentText(next_status.value)
+                finally:
+                    self._loading = False
             self.segment_modified.emit(segment)
+            if next_status is not previous_status:
+                self._refilter()
 
     def _on_status_combo_changed(self, value: str) -> None:
         if self._loading:
@@ -307,9 +321,15 @@ class SegmentEditor(QWidget):
         segment = self.current_segment()
         if segment is None:
             return
-        segment.target = self.target_edit.toPlainText()
+        updated_target = self.target_edit.toPlainText()
+        if updated_target != segment.target:
+            # Text-change handler already updated status and provenance.
+            next_status = status_after_target_edit(segment.status, segment.target, updated_target)
+            segment.target = updated_target
+            segment.status = next_status
         old_status = segment.status
-        segment.status = confirmed_translation_status(segment.status)
+        segment.status = (confirmed_translation_status(segment.status)
+                          if segment.target.strip() else SegmentStatus.NEW)
         self.segment_modified.emit(segment)
         if segment.status is not old_status:
             self.segments_status_modified.emit([segment])

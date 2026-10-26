@@ -68,10 +68,10 @@ class ProjectService:
         self.translation_memory = self._internal_tm
         self._external_tm_connection = None
         # Most GameCAT databases contain one project; load its persisted TM backend.
-        record = self.connection.execute(
+        record = self.connection.fetchone(
             'SELECT external_path FROM tm_project_settings WHERE external_path IS NOT NULL '
             'ORDER BY project_id LIMIT 1'
-        ).fetchone()
+        )
         if record is not None:
             try:
                 self._select_tm_storage(Path(record['external_path']), create_new=False)
@@ -95,10 +95,10 @@ class ProjectService:
     def get_format_profile(self, project: Project, format_name: str) -> FormatProfile:
         if project.id is None:
             raise ValueError('Project must be persisted')
-        row = self.connection.execute(
+        row = self.connection.fetchone(
             'SELECT settings_json FROM project_format_profiles WHERE project_id=? AND format=?',
             (project.id, format_name),
-        ).fetchone()
+        )
         if row is None:
             return FormatProfile(format_name)
         return FormatProfile.from_dict(json.loads(row['settings_json']))
@@ -113,18 +113,18 @@ class ProjectService:
     def has_format_profile(self, project: Project, format_name: str) -> bool:
         if project.id is None:
             return False
-        return self.connection.execute(
+        return self.connection.fetchone(
             'SELECT 1 FROM project_format_profiles WHERE project_id=? AND format=?',
             (project.id, format_name),
-        ).fetchone() is not None
+        ) is not None
 
     def get_ai_settings(self, project: Project) -> AISettings:
         if project.id is None:
             raise ValueError('Project must be persisted')
         with self.connection:
-            row = self.connection.execute(
+            row = self.connection.fetchone(
                 'SELECT * FROM ai_project_settings WHERE project_id=?', (project.id,)
-            ).fetchone()
+            )
         if row is None:
             return AISettings()
         return AISettings(row['model'], row['instructions'], row['input_price_per_million'],
@@ -361,9 +361,9 @@ class ProjectService:
             ids = list(replacements)
             rows = []
             for segment_id in ids:
-                row = self.connection.execute(
+                row = self.connection.fetchone(
                     'SELECT project_id, status, target FROM segments WHERE id=?', (segment_id,)
-                ).fetchone()
+                )
                 if row is None or row['project_id'] != project.id:
                     raise ValueError(f'Segment {segment_id} does not belong to the selected project')
                 status = SegmentStatus(row['status'])
@@ -560,10 +560,10 @@ class ProjectService:
         return project.id
 
     def _tm_setting(self, project: Project):
-        return self.connection.execute(
+        return self.connection.fetchone(
             'SELECT external_path,threshold FROM tm_project_settings WHERE project_id=?',
             (self._tm_project_id(project),),
-        ).fetchone()
+        )
 
     def get_tm_threshold(self, project: Project) -> float:
         settings = self._tm_setting(project)
@@ -594,9 +594,9 @@ class ProjectService:
         # Do not silently create a missing *previously linked* TM during project reopen.
         candidate = open_database(path)
         try:
-            table_names = {row['name'] for row in candidate.execute(
+            table_names = {row['name'] for row in candidate.fetchall(
                 "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()}
+            )}
             if table_names - {'translation_memory', 'sqlite_sequence'}:
                 raise ValueError('Selected file is not a standalone GameCAT TM store')
             initialize_tm_storage(candidate)
