@@ -1,0 +1,23 @@
+{
+  "game": "Demo",
+  "data": {
+    "dialogues": [
+      {
+        "id": "d_001",
+        "text": {
+          "en": "Hello, traveler!",
+          "pl": ""
+        },
+        "speaker": "Guard"
+      },
+      {
+        "id": "d_002",
+        "text": {
+          "en": "Take {amount} gold.",
+          "pl": ""
+        },
+        "speaker": "Merchant"
+      }
+    ]
+  }
+}

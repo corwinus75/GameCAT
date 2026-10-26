@@ -80,10 +80,21 @@ def migrate_ai_schema(connection: sqlite3.Connection) -> None:
         connection.executescript(_AI_SETTINGS_SCHEMA)
 
 
+_FORMAT_PROFILE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS project_format_profiles (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    format TEXT NOT NULL,
+    settings_json TEXT NOT NULL,
+    PRIMARY KEY (project_id, format)
+);
+"""
+
+
 def initialize_schema(connection: sqlite3.Connection) -> None:
     """Create database objects and migrate the project glossary to schema 0.7."""
     connection.executescript(_SCHEMA)
     migrate_glossary_schema(connection)
     connection.executescript(_TM_SETTINGS_SCHEMA)
     migrate_ai_schema(connection)
+    connection.executescript(_FORMAT_PROFILE_SCHEMA)
     connection.commit()

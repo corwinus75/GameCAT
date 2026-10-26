@@ -1,0 +1,3 @@
+id	source	target	context
+d_001	Hello, traveler!		Guard
+d_002	Take {amount} gold.		Merchant

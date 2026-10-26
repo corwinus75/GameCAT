@@ -1,0 +1,8 @@
+{
+  "format": "xml",
+  "records_path": ".//entry",
+  "key_field": "@id",
+  "source_field": "source",
+  "target_field": "target",
+  "sheet_name": ""
+}

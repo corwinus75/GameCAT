@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-SUPPORTED_FORMATS = {'txt', 'csv', 'json'}
+SUPPORTED_FORMATS = {'txt', 'csv', 'json', 'tsv', 'xlsx', 'xml'}
 
 
 def export_format_from_path(path: Path) -> str:

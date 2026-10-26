@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<game version="1"><strings>
+  <entry id="d_001" context="Guard"><source>Hello, traveler!</source><target></target></entry>
+  <entry id="d_002" context="Merchant"><source>Take {amount} gold.</source><target></target></entry>
+</strings></game>

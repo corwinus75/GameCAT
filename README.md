@@ -2,12 +2,12 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.10.0
+## Funkcje wersji 0.11.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
 - SQLite,
-- import i eksport TXT/CSV/JSON,
+- import i eksport TXT/CSV/JSON/TSV/XLSX/XML oraz mapowanie pól i eksport według oryginalnego szablonu,
 - workflow statusów `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED` z ręczną i masową zmianą, filtrami, skrótami i licznikiem postępu,
 - QA placeholderów, tagów, spacji i terminologii,
 - projektowy glosariusz z wieloma równorzędnymi wariantami, edycją GUI oraz importem/eksportem CSV+JSON,
@@ -25,6 +25,7 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
 - PySide6
 - pytest
 - matplotlib
+- openai oraz keyring (funkcje OpenAI API z wersji 0.10)
 
 Instalacja:
 
@@ -70,9 +71,18 @@ Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje
 | Pomiar GIL | `benchmarks/gil_benchmark.py` | ta sama analiza TM: sekwencyjnie / wątki / procesy |
 | Zaawansowane wyszukiwanie i regex (0.9) | `gamecat/search/operations.py` → `filter_segments`, `preview_replacements` | filtry, zamiana Target, sortowanie |
 | GUI | `gamecat/gui/` | PySide6 |
+| Import/eksport lokalizacji 0.11 | `gamecat/localization/{profiles,exchange,xlsx}.py` | TSV/XLSX/XML, zagnieżdżony JSON, zachowanie struktury szablonu |
 | Eksport/import TM 0.8 | `gamecat/tm/exchange.py`, `ProjectService.import_tm_file` | transakcyjny import TM, eksport CSV/JSON |
 | Testy | `tests/` (pytest) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
+
+## Nowości w wersji 0.11
+
+Formaty TSV, XLSX, XML i konfigurowalne JSON oraz profile per projekt — szczegóły, przykłady i zasady bezpiecznego eksportu: **[Dokumentacja 0.11](docs/releases/0.11.md)**.
+
+## Integracja OpenAI API w wersji 0.10
+
+Instrukcje obsługi, API i kosztów: **[Dokumentacja 0.10](docs/releases/0.10.md)**.
 
 ## Nowości w wersji 0.9
 

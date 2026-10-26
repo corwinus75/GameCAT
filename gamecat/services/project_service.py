@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+import json
 import math
 from collections.abc import Iterable, Mapping
 from concurrent.futures import Future
@@ -38,6 +39,8 @@ from gamecat.services.glossary_service import GlossaryService
 from gamecat.glossary.importers import GlossaryImportResult, import_glossary_csv, import_glossary_json
 from gamecat.glossary.exporters import export_glossary_csv, export_glossary_json
 from gamecat.ai.core import AISettings
+from gamecat.localization.profiles import FormatProfile
+from gamecat.localization.exchange import read_source, read_translations, export_translations
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +80,43 @@ class ProjectService:
                 raise
         self.io = IOWorkerPool(max_io_workers)
         self.save_queue = SaveQueue(self.segments, autosave_debounce_seconds)
+
+    def set_format_profile(self, project: Project, profile: FormatProfile) -> None:
+        """Persist format mapping per project and format; never store source files."""
+        if project.id is None:
+            raise ValueError('Project must be persisted')
+        with self.connection:
+            self.connection.execute(
+                'INSERT INTO project_format_profiles(project_id,format,settings_json) VALUES(?,?,?) '
+                'ON CONFLICT(project_id,format) DO UPDATE SET settings_json=excluded.settings_json',
+                (project.id, profile.format, json.dumps(profile.to_dict(), ensure_ascii=False)),
+            )
+
+    def get_format_profile(self, project: Project, format_name: str) -> FormatProfile:
+        if project.id is None:
+            raise ValueError('Project must be persisted')
+        row = self.connection.execute(
+            'SELECT settings_json FROM project_format_profiles WHERE project_id=? AND format=?',
+            (project.id, format_name),
+        ).fetchone()
+        if row is None:
+            return FormatProfile(format_name)
+        return FormatProfile.from_dict(json.loads(row['settings_json']))
+
+    def clear_format_profile(self, project: Project, format_name: str) -> None:
+        if project.id is None:
+            raise ValueError('Project must be persisted')
+        with self.connection:
+            self.connection.execute('DELETE FROM project_format_profiles WHERE project_id=? AND format=?',
+                                    (project.id, format_name))
+
+    def has_format_profile(self, project: Project, format_name: str) -> bool:
+        if project.id is None:
+            return False
+        return self.connection.execute(
+            'SELECT 1 FROM project_format_profiles WHERE project_id=? AND format=?',
+            (project.id, format_name),
+        ).fetchone() is not None
 
     def get_ai_settings(self, project: Project) -> AISettings:
         if project.id is None:
@@ -232,14 +272,17 @@ class ProjectService:
         elif suffix == '.csv':
             key_column, source_column, target_column = csv_columns or ('id', 'source', 'target')
             imported = import_csv(path, key_column, source_column, target_column)
-        elif suffix == '.json':
+        elif suffix == '.json' and not self.has_format_profile(project, 'json'):
             imported = import_json(path)
+        elif suffix in {'.json', '.tsv', '.xlsx', '.xml'}:
+            imported = read_source(path, self.get_format_profile(project, suffix.lstrip('.')))
         else:
             raise ValueError(f'Unsupported import format: {suffix}')
         # Wyrażenie generujące: parsowanie pliku i budowa segmentów odbywa się
         # leniwie, wewnątrz jednej transakcji – błąd w połowie pliku cofa całość.
         segments = (
-            Segment(item.source, item.position, item.key, item.target, project_id=project.id)
+            Segment(item.source, item.position, item.key, item.target, project_id=project.id,
+                    status=SegmentStatus.TRANSLATED if item.target.strip() else SegmentStatus.NEW)
             for item in imported
         )
         try:
@@ -354,6 +397,8 @@ class ProjectService:
         project: Project,
         path: Path,
         csv_columns: tuple[str | None, str] | None = None,
+        format_profile: FormatProfile | None = None,
+        legacy_json: bool = False,
     ) -> TranslationImportResult:
         if project.id is None:
             raise ValueError('project must be persisted before translation import')
@@ -366,8 +411,11 @@ class ProjectService:
         elif suffix == '.csv':
             key_column, target_column = csv_columns or ('id', 'target')
             imported = list(import_translation_csv(path, key_column, target_column))
-        elif suffix == '.json':
+        elif suffix == '.json' and (legacy_json or (format_profile is None and not self.has_format_profile(project, 'json'))):
             imported = list(import_translation_json(path))
+        elif suffix in {'.json', '.tsv', '.xlsx', '.xml'}:
+            mapping = format_profile or self.get_format_profile(project, suffix.lstrip('.'))
+            imported = list(read_translations(path, mapping))
         else:
             raise ValueError(f'Unsupported translation import format: {suffix}')
 
@@ -413,8 +461,11 @@ class ProjectService:
         project: Project,
         path: Path,
         csv_columns: tuple[str | None, str] | None = None,
+        *, format_profile: FormatProfile | None = None,
+        legacy_json: bool = False,
     ) -> Future[TranslationImportResult]:
-        return self.io.submit(self._import_translation_file, project, path, csv_columns)
+        return self.io.submit(self._import_translation_file, project, path, csv_columns,
+                              format_profile, legacy_json)
 
     def sync_project_to_tm(self, project: Project) -> int:
         if project.id is None:
@@ -611,9 +662,29 @@ class ProjectService:
         if project.id is None:
             raise ValueError('project must be persisted before export')
         iterator = self.iter_segments(project.id)
+        if format_name in {'tsv', 'xlsx', 'xml'}:
+            return export_translations(iterator, path, self.get_format_profile(project, format_name))
         counted = _CountingIterator(iterator)
         self._export_file(counted, path, format_name)
         return counted.count
+
+    def _export_using_template(self, project: Project, template: Path, destination: Path) -> int:
+        if project.id is None:
+            raise ValueError('project must be persisted before export')
+        if template.suffix.lower() != destination.suffix.lower():
+            raise ValueError('Original file and output file must use the same format')
+        fmt = template.suffix.lower().lstrip('.')
+        if fmt not in {'csv', 'tsv', 'xlsx', 'json', 'xml'}:
+            raise ValueError(f'Template export does not support: {fmt}')
+        if not self.has_format_profile(project, fmt):
+            raise ValueError('First import a source file with a saved format profile')
+        return export_translations(
+            self.iter_segments(project.id), destination, self.get_format_profile(project, fmt),
+            template_path=template,
+        )
+
+    def export_using_template_async(self, project: Project, template: Path, destination: Path) -> Future[int]:
+        return self.io.submit(self._export_using_template, project, template, destination)
 
     def export_project_async(self, project: Project, path: Path, format_name: str) -> Future[int]:
         """Eksportuj projekt w wątku I/O, czytając segmenty partiami z bazy."""

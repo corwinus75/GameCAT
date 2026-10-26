@@ -11,6 +11,8 @@ from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QStatusBar
 
 from gamecat.gui.csv_import_dialog import CsvImportDialog
+from gamecat.gui.format_mapping_dialog import FormatMappingDialog
+from gamecat.localization.profiles import FormatProfile
 from gamecat.gui.csv_translation_import_dialog import CsvTranslationImportDialog
 from gamecat.gui.file_formats import export_format_from_path, normalized_export_path
 from gamecat.gui.glossary_panel import GlossaryPanel
@@ -120,6 +122,8 @@ class MainWindow(QMainWindow):
         self.import_translation_action.triggered.connect(self._safe_import_translation)
         self.export_action = QAction('Eksport', self)
         self.export_action.triggered.connect(self._safe_export)
+        self.export_template_action = QAction('Eksportuj według oryginalnego szablonu…', self)
+        self.export_template_action.triggered.connect(self._safe_export_template)
         self.save_action = QAction('Zapisz', self)
         self.save_action.setShortcut(QKeySequence.StandardKey.Save)
         self.save_action.triggered.connect(self._safe_save)
@@ -131,6 +135,7 @@ class MainWindow(QMainWindow):
             self.import_action,
             self.import_translation_action,
             self.export_action,
+            self.export_template_action,
             self.save_action,
             exit_action,
         ):
@@ -221,7 +226,7 @@ class MainWindow(QMainWindow):
 
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
-        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action, self.attach_tm_action, self.internal_tm_action, self.import_tm_action, self.export_tm_action, self.replace_action, self.next_untranslated_action, self.prev_untranslated_action, self.next_qa_action, self.prev_qa_action):
+        for action in (self.import_action, self.import_translation_action, self.export_action, self.export_template_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action, self.attach_tm_action, self.internal_tm_action, self.import_tm_action, self.export_tm_action, self.replace_action, self.next_untranslated_action, self.prev_untranslated_action, self.next_qa_action, self.prev_qa_action):
             action.setEnabled(enabled)
         for action in self.status_actions:
             action.setEnabled(enabled)
@@ -791,6 +796,24 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(50, poll)
 
+    def _configure_mapping(self, path: Path) -> bool:
+        """Configure mapping for new formats, retain legacy JSON when selected."""
+        assert self.project_service is not None and self.current_project is not None
+        fmt = path.suffix.lower().lstrip('.')
+        if fmt not in {'json', 'tsv', 'xlsx', 'xml'}:
+            return True
+        current = (self.project_service.get_format_profile(self.current_project, fmt)
+                   if self.project_service.has_format_profile(self.current_project, fmt) else None)
+        dialog = FormatMappingDialog(path, current, self)
+        if not dialog.exec():
+            return False
+        profile = dialog.selected_profile()
+        if profile is None:
+            self.project_service.clear_format_profile(self.current_project, fmt)
+        else:
+            self.project_service.set_format_profile(self.current_project, profile)
+        return True
+
     def _safe_import(self) -> None:
         try:
             self.import_segments()
@@ -804,12 +827,12 @@ class MainWindow(QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(
             self,
             'Importuj plik źródłowy',
-            filter='Obsługiwane pliki (*.txt *.csv *.json);;TXT (*.txt);;CSV (*.csv);;JSON (*.json)',
+            filter='Obsługiwane pliki (*.txt *.csv *.json *.tsv *.xlsx *.xml);;TXT (*.txt);;CSV (*.csv);;JSON (*.json);;TSV (*.tsv);;Excel (*.xlsx);;XML (*.xml)',
         )
         if not filename:
             return
         path = Path(filename)
-        if path.suffix.casefold() not in {'.txt', '.csv', '.json'}:
+        if path.suffix.casefold() not in {'.txt', '.csv', '.json', '.tsv', '.xlsx', '.xml'}:
             QMessageBox.warning(self, 'GameCAT', f'Nieobsługiwany format pliku: {path.suffix or "brak rozszerzenia"}')
             return
 
@@ -826,7 +849,13 @@ class MainWindow(QMainWindow):
             if csv_columns[0] == csv_columns[1]:
                 QMessageBox.warning(self, 'GameCAT', 'Kolumna klucza i tekstu źródłowego muszą być różne.')
                 return
+            self.project_service.set_format_profile(self.current_project, FormatProfile(
+                'csv', key_field=csv_columns[0], source_field=csv_columns[1],
+                target_field=csv_columns[2] or 'target',
+            ))
 
+        if not self._configure_mapping(path):
+            return
         self.statusBar().showMessage(f'Importowanie: {path.name}...')
         future = self.project_service.import_file_async(self.current_project, path, csv_columns)
 
@@ -861,12 +890,12 @@ class MainWindow(QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(
             self,
             'Importuj tłumaczenie',
-            filter='Obsługiwane pliki (*.txt *.csv *.json);;TXT (*.txt);;CSV (*.csv);;JSON (*.json)',
+            filter='Obsługiwane pliki (*.txt *.csv *.json *.tsv *.xlsx *.xml);;TXT (*.txt);;CSV (*.csv);;JSON (*.json);;TSV (*.tsv);;Excel (*.xlsx);;XML (*.xml)',
         )
         if not filename:
             return
         path = Path(filename)
-        if path.suffix.casefold() not in {'.txt', '.csv', '.json'}:
+        if path.suffix.casefold() not in {'.txt', '.csv', '.json', '.tsv', '.xlsx', '.xml'}:
             QMessageBox.warning(self, 'GameCAT', f'Nieobsługiwany format pliku: {path.suffix or "brak rozszerzenia"}')
             return
 
@@ -884,9 +913,21 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, 'GameCAT', 'Kolumna klucza i tłumaczenia muszą być różne.')
                 return
 
+        translation_profile = None
+        legacy_json = False
+        fmt = path.suffix.lower().lstrip('.')
+        if fmt in {'json', 'tsv', 'xlsx', 'xml'}:
+            current = (self.project_service.get_format_profile(self.current_project, fmt)
+                       if self.project_service.has_format_profile(self.current_project, fmt) else None)
+            dialog = FormatMappingDialog(path, current, self)
+            if not dialog.exec():
+                return
+            translation_profile = dialog.selected_profile()
+            legacy_json = fmt == 'json' and translation_profile is None
         self.statusBar().showMessage(f'Importowanie tłumaczenia: {path.name}...')
         future = self.project_service.import_translation_file_async(
-            self.current_project, path, csv_columns
+            self.current_project, path, csv_columns,
+            format_profile=translation_profile, legacy_json=legacy_json,
         )
 
         def imported(result) -> None:
@@ -922,12 +963,12 @@ class MainWindow(QMainWindow):
         filename, selected_filter = QFileDialog.getSaveFileName(
             self,
             'Eksportuj tłumaczenie',
-            'translation.txt',
-            'TXT (*.txt);;CSV (*.csv);;JSON (*.json)',
+            'translation',
+            'TXT (*.txt);;CSV (*.csv);;JSON (*.json);;TSV (*.tsv);;Excel (*.xlsx);;XML (*.xml)',
         )
         if not filename:
             return
-        selected_format = 'csv' if selected_filter.startswith('CSV') else 'json' if selected_filter.startswith('JSON') else 'txt'
+        selected_format = next((fmt for label, fmt in (('CSV','csv'),('JSON','json'),('TSV','tsv'),('Excel','xlsx'),('XML','xml')) if selected_filter.startswith(label)), 'txt')
         path = normalized_export_path(Path(filename), selected_format)
         try:
             format_name = export_format_from_path(path)
@@ -945,6 +986,53 @@ class MainWindow(QMainWindow):
             )
 
         self._watch_future(future, exported, 'Eksport')
+
+    def _safe_export_template(self) -> None:
+        try:
+            self.export_template()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def export_template(self) -> None:
+        """Copy a source file and replace only mapped Target values."""
+        assert self.project_service is not None and self.current_project is not None
+        template, _ = QFileDialog.getOpenFileName(
+            self, 'Wskaż oryginalny plik gry (szablon)',
+            filter='Formaty strukturalne (*.csv *.tsv *.xlsx *.json *.xml)',
+        )
+        if not template:
+            return
+        source = Path(template)
+        fmt = source.suffix.lower().lstrip('.')
+        if not self.project_service.has_format_profile(self.current_project, fmt):
+            QMessageBox.warning(self, 'GameCAT',
+                'Brak zapisanego profilu mapowania dla tego formatu. '
+                'Najpierw zaimportuj plik źródłowy i skonfiguruj mapowanie.')
+            return
+        destination, _ = QFileDialog.getSaveFileName(
+            self, 'Zapisz wynik (nie zastępuj oryginału)',
+            f'{source.stem}_pl{source.suffix}',
+            f'{fmt.upper()} (*{source.suffix})',
+        )
+        if not destination:
+            return
+        output = Path(destination)
+        if not output.suffix:
+            output = output.with_suffix(source.suffix)
+        if output.resolve() == source.resolve():
+            QMessageBox.warning(self, 'GameCAT', 'Nie można nadpisać pliku źródłowego.')
+            return
+        if output.exists() and QMessageBox.question(
+            self, 'GameCAT', f'Plik {output.name} już istnieje. Nadpisać?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self.statusBar().showMessage('Eksport według szablonu w toku...')
+        future = self.project_service.export_using_template_async(self.current_project, source, output)
+        self._watch_future(future, lambda count: self.statusBar().showMessage(
+            f'Zapisano {count} tłumaczeń w strukturze {output.name}.', 7000), 'Eksport według szablonu')
 
     def _save_ai_settings(self) -> None:
         if self.project_service is None or self.current_project is None:

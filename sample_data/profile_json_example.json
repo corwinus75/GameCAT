@@ -1,0 +1,8 @@
+{
+  "format": "json",
+  "records_path": "data.dialogues",
+  "key_field": "id",
+  "source_field": "text.en",
+  "target_field": "text.pl",
+  "sheet_name": ""
+}
