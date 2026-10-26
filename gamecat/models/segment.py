@@ -25,13 +25,15 @@ class Segment:
     project_id: int | None = None
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
+    ai_generated: bool = False
     _target: str = field(default="", repr=False)
     _status: SegmentStatus = field(default=SegmentStatus.NEW, repr=False)
 
     def __init__(self, source: str, position: int, key: str | None = None,
                  target: str = "", status: SegmentStatus | str = SegmentStatus.NEW,
                  comment: str = "", id: int | None = None, project_id: int | None = None,
-                 created_at: datetime | None = None, updated_at: datetime | None = None):
+                 created_at: datetime | None = None, updated_at: datetime | None = None,
+                 ai_generated: bool = False):
         self.source = source
         self.position = position
         self.key = key
@@ -44,6 +46,7 @@ class Segment:
         self._status = SegmentStatus.NEW
         self.target = target
         self.status = status
+        self.ai_generated = bool(ai_generated)
 
     @property
     def target(self) -> str:
@@ -55,6 +58,7 @@ class Segment:
         if not isinstance(value, str):
             raise TypeError("target must be a string")
         self._target = value
+        self.ai_generated = False  # manual edits invalidate the provenance mark
         self.updated_at = _now()
 
     @property

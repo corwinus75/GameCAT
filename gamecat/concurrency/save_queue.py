@@ -47,6 +47,7 @@ class SaveQueue:
             segment.project_id,
             segment.created_at,
             segment.updated_at,
+            segment.ai_generated,
         )
 
     @property

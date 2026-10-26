@@ -59,9 +59,31 @@ CREATE TABLE IF NOT EXISTS translation_memory (
 """
 
 
+_AI_SETTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ai_project_settings (
+ project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+ model TEXT NOT NULL DEFAULT 'gpt-5-mini',
+ instructions TEXT NOT NULL DEFAULT '',
+ input_price_per_million REAL NOT NULL DEFAULT 0,
+ output_price_per_million REAL NOT NULL DEFAULT 0,
+ max_output_tokens INTEGER NOT NULL DEFAULT 1024
+);
+"""
+
+
+def migrate_ai_schema(connection: sqlite3.Connection) -> None:
+    """Idempotent migration; never removes existing translation data."""
+    with connection:
+        columns = {row['name'] for row in connection.execute('PRAGMA table_info(segments)').fetchall()}
+        if 'ai_generated' not in columns:
+            connection.execute('ALTER TABLE segments ADD COLUMN ai_generated INTEGER NOT NULL DEFAULT 0')
+        connection.executescript(_AI_SETTINGS_SCHEMA)
+
+
 def initialize_schema(connection: sqlite3.Connection) -> None:
     """Create database objects and migrate the project glossary to schema 0.7."""
     connection.executescript(_SCHEMA)
     migrate_glossary_schema(connection)
     connection.executescript(_TM_SETTINGS_SCHEMA)
+    migrate_ai_schema(connection)
     connection.commit()

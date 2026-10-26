@@ -8,20 +8,20 @@ from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.database.segment_iterator import SegmentBatchIterator
 
-_INSERT_SEGMENT = '''INSERT INTO segments(project_id,position,key,source,target,status,comment,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?)'''
-_UPDATE_SEGMENT = 'UPDATE segments SET target=?,status=?,comment=?,updated_at=? WHERE id=?'
+_INSERT_SEGMENT = '''INSERT INTO segments(project_id,position,key,source,target,status,comment,created_at,updated_at,ai_generated)
+                VALUES(?,?,?,?,?,?,?,?,?,?)'''
+_UPDATE_SEGMENT = 'UPDATE segments SET target=?,status=?,comment=?,updated_at=?,ai_generated=? WHERE id=?'
 
 
 def _insert_params(segment: Segment) -> tuple:
     return (segment.project_id, segment.position, segment.key, segment.source, segment.target,
-            segment.status.value, segment.comment, segment.created_at.isoformat(), segment.updated_at.isoformat())
+            segment.status.value, segment.comment, segment.created_at.isoformat(), segment.updated_at.isoformat(), int(segment.ai_generated))
 
 
 def _update_params(segment: Segment) -> tuple:
     if segment.id is None:
         raise ValueError('segment has no id')
-    return (segment.target, segment.status.value, segment.comment, segment.updated_at.isoformat(), segment.id)
+    return (segment.target, segment.status.value, segment.comment, segment.updated_at.isoformat(), int(segment.ai_generated), segment.id)
 
 
 def _dt(value: str) -> datetime:
@@ -78,7 +78,7 @@ class SegmentRepository:
                 created.append(segment)
         return created
     def _from_row(self, row: sqlite3.Row) -> Segment:
-        return Segment(row['source'], row['position'], row['key'], row['target'], row['status'], row['comment'], row['id'], row['project_id'], _dt(row['created_at']), _dt(row['updated_at']))
+        return Segment(row['source'], row['position'], row['key'], row['target'], row['status'], row['comment'], row['id'], row['project_id'], _dt(row['created_at']), _dt(row['updated_at']), bool(row['ai_generated']))
     def get(self, segment_id: int | None) -> Segment:
         if segment_id is None: raise KeyError(segment_id)
         with self.connection:

@@ -1,0 +1,5 @@
+Język docelowy: naturalna, poprawna polszczyzna fantasy (lokalizacja gier).
+Zachowuj dokładnie znaczniki, placeholdery i ich liczbę, również {g|...}, {d|...}, {mf|...}, {name}, {n}, %s i tagi XML.
+Zastosuj terminologię glosariusza podaną w danych żądania; wszystkie warianty dopuszczalne są równorzędne.
+Nie zmieniaj nazw własnych bez wskazania w glosariuszu.
+Zachowaj liczbę znaków nowej linii i nie dodawaj komentarzy tłumacza.

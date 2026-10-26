@@ -147,7 +147,7 @@ class SegmentEditor(QWidget):
     @staticmethod
     def _item_text(segment: Segment) -> str:
         badge = _STATUS_BADGES[segment.status]
-        return f'[{badge}] {segment.position}: {segment.source[:70]}'
+        return f'[AI] [{badge}] {segment.position}: {segment.source[:70]}' if segment.ai_generated else f'[{badge}] {segment.position}: {segment.source[:70]}'
 
     def _on_quality_filter_changed(self, *_args) -> None:
         if self.quality_filter.currentData() in {'qa_errors', 'tm_match'}:
@@ -273,6 +273,9 @@ class SegmentEditor(QWidget):
         segment = self.current_segment()
         if segment is not None:
             segment.target = self.target_edit.toPlainText()
+            item = self.segment_list.currentItem()
+            if item is not None:
+                item.setText(self._item_text(segment))
             self.segment_modified.emit(segment)
 
     def _on_status_combo_changed(self, value: str) -> None:

@@ -37,6 +37,7 @@ from gamecat.workflow.status import ProjectProgress
 from gamecat.services.glossary_service import GlossaryService
 from gamecat.glossary.importers import GlossaryImportResult, import_glossary_csv, import_glossary_json
 from gamecat.glossary.exporters import export_glossary_csv, export_glossary_json
+from gamecat.ai.core import AISettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +77,60 @@ class ProjectService:
                 raise
         self.io = IOWorkerPool(max_io_workers)
         self.save_queue = SaveQueue(self.segments, autosave_debounce_seconds)
+
+    def get_ai_settings(self, project: Project) -> AISettings:
+        if project.id is None:
+            raise ValueError('Project must be persisted')
+        with self.connection:
+            row = self.connection.execute(
+                'SELECT * FROM ai_project_settings WHERE project_id=?', (project.id,)
+            ).fetchone()
+        if row is None:
+            return AISettings()
+        return AISettings(row['model'], row['instructions'], row['input_price_per_million'],
+                          row['output_price_per_million'], row['max_output_tokens'])
+
+    def set_ai_settings(self, project: Project, settings: AISettings) -> None:
+        if project.id is None:
+            raise ValueError('Project must be persisted')
+        with self.connection:
+            self.connection.execute('''INSERT INTO ai_project_settings
+                (project_id,model,instructions,input_price_per_million,output_price_per_million,max_output_tokens)
+                VALUES(?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET
+                model=excluded.model, instructions=excluded.instructions,
+                input_price_per_million=excluded.input_price_per_million,
+                output_price_per_million=excluded.output_price_per_million,
+                max_output_tokens=excluded.max_output_tokens''',
+                (project.id, settings.model, settings.instructions, settings.input_price_per_million,
+                 settings.output_price_per_million, settings.max_output_tokens))
+
+    def apply_ai_translation(
+        self, project: Project, segment_id: int, translation: str, model: str,
+        *, replace: bool = False, include_reviewed: bool = False,
+        expected_source: str | None = None, expected_target: str | None = None,
+    ) -> None:
+        # Apply AI output with a fresh ownership and conflict check.
+        if project.id is None:
+            raise ValueError('Project must be persisted')
+        if not translation.strip() or not model.strip():
+            raise ValueError('AI translation and model are required')
+        self.flush_saves()
+        with self.connection:
+            segment = self.segments.get(segment_id)
+            if segment.project_id != project.id:
+                raise ValueError('Segment does not belong to current project')
+            if expected_source is not None and segment.source != expected_source:
+                raise ValueError('Segment source changed during AI translation')
+            if expected_target is not None and segment.target != expected_target:
+                raise ValueError('Segment target changed during AI translation')
+            if segment.target.strip() and not replace:
+                raise ValueError('Cannot overwrite existing translation without consent')
+            if segment.status in {SegmentStatus.REVIEWED, SegmentStatus.APPROVED} and not include_reviewed:
+                raise ValueError('Reviewed and approved segments are protected')
+            segment.target = translation
+            segment.ai_generated = True
+            segment.status = SegmentStatus.TRANSLATED
+            self.segments.update(segment)
 
     def create_project(self, name: str, source_language: str, target_language: str, source_format: str) -> Project:
         return self.projects.create(Project(name, source_language, target_language, source_format))
@@ -283,7 +338,7 @@ class ProjectService:
                     next_status = status
                 rows.append((target, next_status.value, datetime.now(timezone.utc).isoformat(), segment_id, project.id))
             self.connection.executemany(
-                'UPDATE segments SET target=?,status=?,updated_at=? WHERE id=? AND project_id=?', rows
+                'UPDATE segments SET target=?,status=?,updated_at=?,ai_generated=0 WHERE id=? AND project_id=?', rows
             )
             return len(rows)
 

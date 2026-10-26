@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.9.0
+## Funkcje wersji 0.10.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
@@ -256,3 +256,25 @@ CSV zapisuje jeden wariant na wiersz. JSON zapisuje jeden obiekt na termin z tab
 ### Migracja projektów 0.6
 
 Przy otwarciu starej bazy GameCAT 0.6 płaska tabela glosariusza jest automatycznie migrowana do relacji `glossary_terms` + `glossary_translations`. Warianty tego samego terminu są scalane, duplikaty usuwane, a wpisy globalne z wcześniejszego modelu nie są przypisywane do projektu. Migracja jest idempotentna i wykonywana transakcyjnie.
+
+## GameCAT 0.10 — OpenAI API
+
+Panel **OpenAI** pozwala tłumaczyć pojedyncze segmenty (skrót `Ctrl+Shift+T`)
+i wsadowo puste Target z wykorzystaniem glosariusza, TM i QA.
+
+**Klucz API:** `OPENAI_API_KEY` lub hasło wpisane tymczasowo w panelu;
+opcjonalnie zapis w systemowym magazynie poświadczeń za pomocą `keyring`.
+**Nie jest zapisywany w bazie projektu.**
+
+Po wygenerowaniu pojedynczego tłumaczenia najpierw sprawdź i ewentualnie
+popraw podgląd, a potem kliknij **Zastosuj propozycję do Target**. Zmiana
+istniejącego Target wymaga potwierdzenia, a wynik z QA wymaga dodatkowej zgody.
+Segmenty oznaczone `[AI]` wymagają sprawdzenia przez tłumacza.
+
+Przy tłumaczeniu wsadowym konieczne są ręcznie ustawione ceny za 1 mln tokenów,
+budżet i maksymalna liczba segmentów. Budżet ma charakter **szacunkowy**,
+nie jest twardym limitem naliczania opłat. Płatne żądania mogą zostać
+naliczone nawet po anulowaniu. Tekst i dopasowania TM/glosariusza są
+wysyłane na serwery OpenAI.
+
+Szczegóły: [docs/releases/0.10.md](docs/releases/0.10.md).
