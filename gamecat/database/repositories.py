@@ -288,3 +288,25 @@ class TranslationMemoryRepository:
                 (source, target, source_language, target_language),
             ).fetchone()
         return row is not None
+
+    def create_unique_many(self, entries: Iterable[TranslationMemoryEntry]) -> int:
+        """Insert distinct bilingual pairs atomically; preserve existing rows."""
+        created = 0
+        statement = """INSERT INTO translation_memory
+                    (source,target,source_language,target_language,origin_project,created_at)
+                    SELECT ?,?,?,?,?,? WHERE NOT EXISTS (
+                        SELECT 1 FROM translation_memory
+                        WHERE source=? AND target=? AND source_language=? AND target_language=?
+                    )"""
+        with self.connection:
+            for entry in entries:
+                if not all(isinstance(value, str) and value.strip() for value in
+                           (entry.source, entry.target, entry.source_language, entry.target_language)):
+                    raise ValueError('TM source, target and both languages must be non-empty')
+                cursor = self.connection.execute(statement, (
+                    entry.source, entry.target, entry.source_language, entry.target_language,
+                    entry.origin_project, entry.created_at.isoformat(),
+                    entry.source, entry.target, entry.source_language, entry.target_language,
+                ))
+                created += cursor.rowcount
+        return created

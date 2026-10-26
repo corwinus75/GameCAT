@@ -52,6 +52,15 @@ class TMAnalysisDialog(QDialog):
         self.summary_label = QLabel('Wybierz tryb i kliknij „Analizuj”.')
         self.summary_label.setWordWrap(True)
 
+        self.pretranslate_spin = QSpinBox()
+        self.pretranslate_spin.setRange(50, 100)
+        self.pretranslate_spin.setSuffix('%')
+        self.pretranslate_spin.setValue(100)
+        self.pretranslate_spin.setToolTip(
+            '100% to najbezpieczniejszy wybór. Niższe progi wstawiają propozycje '
+            'wymagające ręcznej kontroli tłumacza.'
+        )
+        self.pretranslate_spin.valueChanged.connect(self._refresh_apply_button)
         self.apply_button = QPushButton('Wstaw dopasowania 100%')
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.apply_exact_matches)
@@ -60,6 +69,8 @@ class TMAnalysisDialog(QDialog):
 
         actions = QHBoxLayout()
         actions.addWidget(self.run_button)
+        actions.addWidget(QLabel('Pretranslacja od:'))
+        actions.addWidget(self.pretranslate_spin)
         actions.addWidget(self.apply_button)
         actions.addStretch()
 
@@ -104,18 +115,47 @@ class TMAnalysisDialog(QDialog):
             f'{report.tm_size} wpisami TM. Tryb: {_MODE_LABELS[report.mode]}, '
             f'workerów: {report.workers}, czas: {report.elapsed:.2f} s.'
         )
-        exact = len(report.exact_matches())
-        self.apply_button.setText(f'Wstaw dopasowania 100% ({exact})')
-        self.apply_button.setEnabled(exact > 0)
+        self._refresh_apply_button()
+
+    def _refresh_apply_button(self) -> None:
+        if self._report is None:
+            self.apply_button.setEnabled(False)
+            return
+        threshold = self.pretranslate_spin.value() / 100
+        eligible = sum(1 for item in self._report.matches
+                       if item.score >= threshold and item.tm_target and item.tm_source)
+        self.apply_button.setText(
+            f'Wstaw dopasowania ≥{self.pretranslate_spin.value()}% ({eligible})'
+        )
+        self.apply_button.setEnabled(eligible > 0)
 
     def apply_exact_matches(self) -> None:
-        if self._report is None:
+        """Apply selected TM suggestions only to empty targets."""
+        if self._report is None or not self.apply_button.isEnabled():
             return
+        threshold = self.pretranslate_spin.value() / 100
+        if threshold < 1.0:
+            answer = QMessageBox.question(
+                self, 'GameCAT — fuzzy pretranslacja',
+                'Dopasowania poniżej 100% mogą być niepoprawne lub zawierać '
+                'niezgodne placeholdery. Każdy wstawiony tekst wymaga weryfikacji '
+                'i kontroli QA. Kontynuować?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         try:
-            count = self._service.apply_exact_matches(self._project, self._report)
+            count = self._service.apply_tm_matches(
+                self._project, self._report, minimum_score=threshold
+            )
         except Exception as exc:
             QMessageBox.critical(self, 'GameCAT', f'Pretranslacja nie powiodła się:\n{exc}')
             return
         self.apply_button.setEnabled(False)
-        QMessageBox.information(self, 'GameCAT', f'Wstawiono tłumaczenia do {count} segmentów bez tłumaczenia.')
+        QMessageBox.information(
+            self, 'GameCAT',
+            f'Wstawiono {count} tłumaczeń do pustych segmentów. '
+            'Zalecane: uruchom QA całego projektu.'
+        )
         self.segments_changed.emit()

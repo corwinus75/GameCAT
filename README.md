@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.7.0
+## Funkcje wersji 0.8.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
@@ -10,8 +10,9 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
 - workflow statusów `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED` z ręczną i masową zmianą, filtrami, skrótami i licznikiem postępu,
 - QA placeholderów, tagów, spacji i terminologii,
 - projektowy glosariusz z wieloma równorzędnymi wariantami, edycją GUI oraz importem/eksportem CSV+JSON,
-- Translation Memory z fuzzy matching,
-- analiza projektu względem TM (progi 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak) sekwencyjnie, w wątkach lub w procesach, z pretranslacją dopasowań 100%,
+- Translation Memory z fuzzy matching, możliwością korzystania z osobnej bazy SQLite,
+  importem/eksportem CSV+JSON, progiem dopasowania i automatycznym dodawaniem zatwierdzonych segmentów,
+- analiza projektu względem TM (progi 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak) sekwencyjnie, w wątkach lub w procesach, z wsadową pretranslacją dopasowań ≥50% (domyślnie i bez potwierdzenia tylko 100%),
 - zadania I/O przez `ThreadPoolExecutor`,
 - nieblokujący autosave z `Queue`, scalaniem szybkich zmian i `Lock`,
 - GUI PySide6,
@@ -67,12 +68,32 @@ Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje
 | Procesy | `gamecat/tm/analysis.py → analyze()` (`ProcessPoolExecutor`, kontekst `spawn`, `initializer`) | **TM → Analiza projektu względem TM** (`Ctrl+Shift+A`) |
 | Pomiar GIL | `benchmarks/gil_benchmark.py` | ta sama analiza TM: sekwencyjnie / wątki / procesy |
 | GUI | `gamecat/gui/` | PySide6 |
+| Eksport/import TM 0.8 | `gamecat/tm/exchange.py`, `ProjectService.import_tm_file` | transakcyjny import TM, eksport CSV/JSON |
 | Testy | `tests/` (pytest) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
 
-## Analiza projektu względem TM (v0.5.1)
+## Obsługa TM w wersji 0.8
 
-**TM → Analiza projektu względem TM…** porównuje każdy segment projektu ze wszystkimi wpisami pamięci tłumaczeniowej dla pary językowej projektu i pokazuje liczbę segmentów oraz słów w progach dopasowania. W oknie można wybrać tryb wykonania (procesy, wątki, sekwencyjnie) i liczbę workerów, co pozwala porównać tryby bezpośrednio w programie. Przycisk **Wstaw dopasowania 100%** wpisuje tłumaczenia z TM do segmentów, które nie mają jeszcze tłumaczenia (istniejące tłumaczenia nie są nadpisywane).
+Dokładny opis formatu CSV/JSON i zasad bezpieczeństwa:
+**[Dokumentacja GameCAT 0.8](docs/releases/0.8.md)**.
+
+W menu **TM** można wskazać zewnętrzną bazę `.sqlite` lub powrócić do TM
+przechowywanej w pliku projektu. Każdy projekt zapamiętuje swoją aktywną
+bazę TM oraz minimalny próg sugestii w panelu TM (domyślnie 45%).
+Zmiana magazynu nie scala automatycznie ich zawartości — do przenoszenia par
+służą **Eksportuj TM** i **Importuj TM**. Pliki wymiany mogą zawierać wiele
+par językowych, lecz podpowiedzi i analiza projektu wybierają wyłącznie
+zgodną parę. Zatwierdzenie niepustego segmentu (`APPROVED`) dodaje jego
+parę Source/Target do aktywnego magazynu, bez duplikatów.
+
+Dla dużych zbiorów można włączyć **Analizę projektu względem TM** i wybrać
+próg pretranslacji (50–100%). Pretranslacja nie nadpisuje istniejącego
+Target i ustawia jedynie `TRANSLATED` dla wcześniej nowych segmentów.
+Propozycje fuzzy poniżej 100% wymagają ręcznej recenzji i QA.
+
+## Analiza projektu względem TM (od v0.5.1)
+
+**TM → Analiza projektu względem TM…** porównuje każdy segment projektu ze wszystkimi wpisami pamięci tłumaczeniowej dla pary językowej projektu i pokazuje liczbę segmentów oraz słów w progach dopasowania. W oknie można wybrać tryb wykonania (procesy, wątki, sekwencyjnie) i liczbę workerów, co pozwala porównać tryby bezpośrednio w programie. Przycisk **Wstaw dopasowania ≥X%** wpisuje tłumaczenia z TM do pustych segmentów. Domyślny próg 100% można obniżyć po potwierdzeniu ryzyka; istniejące tłumaczenia nie są nadpisywane.
 
 Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozostaje responsywne. Pamięć tłumaczeniowa jest przekazywana do każdego procesu tylko raz, przez `initializer` puli; dopasowania dokładne są wyszukiwane słownikiem w O(1), a fuzzy matching liczony jest tylko dla pozostałych segmentów. Projekty mniejsze niż 200 segmentów są analizowane sekwencyjnie, bo start puli procesów kosztowałby więcej niż sama praca.
 
@@ -81,9 +102,9 @@ Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozost
 <!-- BENCHMARK:START -->
 | Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |
 |---|---:|---:|---:|---:|
-| Sekwencyjnie | 4.506 | 3.930 | 5.346 | 1.00x |
-| Wątki | 4.463 | 4.015 | 4.960 | 1.01x |
-| Procesy | 3.092 | 2.990 | 3.846 | 1.46x |
+| Sekwencyjnie | 3.759 | 3.701 | 3.909 | 1.00x |
+| Wątki | 3.754 | 3.655 | 4.047 | 1.00x |
+| Procesy | 1.796 | 1.745 | 1.942 | 2.09x |
 
 Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), seed 2026.  
 Środowisko: Python 3.14.0 (CPython), Windows 11, 22 rdzeni logicznych, GIL włączony.

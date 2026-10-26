@@ -70,6 +70,7 @@ class SegmentMatch:
     score: float
     tm_source: str | None
     tm_target: str | None
+    segment_source: str | None = None
 
     @property
     def band(self) -> str:
@@ -84,6 +85,11 @@ class TMAnalysisReport:
     workers: int
     elapsed: float
     tm_size: int
+    # Filled by ProjectService; benchmark-only reports remain unbound.
+    project_id: int | None = None
+    project_database: str | None = None
+    source_language: str | None = None
+    target_language: str | None = None
     band_segments: dict[str, int] = field(init=False)
     band_words: dict[str, int] = field(init=False)
 
@@ -127,7 +133,7 @@ def best_match(source: str, tm: Sequence[TMPair], exact: dict[str, str] | None =
 def _match_item(item: SegmentItem, tm: Sequence[TMPair], exact: dict[str, str]) -> SegmentMatch:
     segment_id, source = item
     score, tm_source, tm_target = best_match(source, tm, exact)
-    return SegmentMatch(segment_id, word_count(source), score, tm_source, tm_target)
+    return SegmentMatch(segment_id, word_count(source), score, tm_source, tm_target, source)
 
 
 # --- stan procesu roboczego -------------------------------------------------

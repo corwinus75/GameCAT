@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
                 dock,
             )
         self.tm_panel.target_selected.connect(self.segment_editor.target_edit.setPlainText)
+        self.tm_panel.threshold_changed.connect(self._update_tm_threshold)
         self.segment_editor.segment_changed.connect(self._update_current_qa)
         self.segment_editor.segment_changed.connect(self._update_current_tm)
         self.segment_editor.segment_changed.connect(self._update_glossary_context)
@@ -141,11 +142,25 @@ class MainWindow(QMainWindow):
         self.analyze_tm_action.setShortcut(QKeySequence('Ctrl+Shift+A'))
         self.analyze_tm_action.triggered.connect(self._safe_analyze_tm)
         tm_menu.addAction(self.analyze_tm_action)
+        tm_menu.addSeparator()
+        self.attach_tm_action = QAction('Wybierz zewnętrzną bazę TM…', self)
+        self.attach_tm_action.triggered.connect(self._safe_attach_tm_database)
+        tm_menu.addAction(self.attach_tm_action)
+        self.internal_tm_action = QAction('Użyj TM w bazie projektu', self)
+        self.internal_tm_action.triggered.connect(self._safe_use_project_tm_database)
+        tm_menu.addAction(self.internal_tm_action)
+        tm_menu.addSeparator()
+        self.import_tm_action = QAction('Importuj TM (CSV/JSON)…', self)
+        self.import_tm_action.triggered.connect(self._safe_import_tm)
+        tm_menu.addAction(self.import_tm_action)
+        self.export_tm_action = QAction('Eksportuj TM (CSV/JSON)…', self)
+        self.export_tm_action.triggered.connect(self._safe_export_tm)
+        tm_menu.addAction(self.export_tm_action)
         self._sync_actions()
 
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
-        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action):
+        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action, self.attach_tm_action, self.internal_tm_action, self.import_tm_action, self.export_tm_action):
             action.setEnabled(enabled)
         for action in self.status_actions:
             action.setEnabled(enabled)
@@ -195,6 +210,8 @@ class MainWindow(QMainWindow):
         self.segment_editor.set_segments([])
         self.glossary_panel.set_terms([])
         self.tm_panel.set_matches([])
+        self.tm_panel.set_threshold(0.45)
+        self.tm_panel.set_storage_path(None)
         self.qa_panel.set_issues([])
         self.qa_panel.clear_project_report()
         self.setWindowTitle(f'GameCAT — {persisted.name}')
@@ -230,6 +247,8 @@ class MainWindow(QMainWindow):
         self.project_path = path
         self.glossary_panel.set_terms(service.list_glossary(project.id))
         self.tm_panel.set_matches([])
+        self.tm_panel.set_threshold(service.get_tm_threshold(project))
+        self.tm_panel.set_storage_path(service.tm_database_path(project))
         self.qa_panel.clear_project_report()
         self.segment_editor.set_segments(segments)
         self._refresh_progress()
@@ -300,6 +319,9 @@ class MainWindow(QMainWindow):
             self._reload_segments()
             return
         self._refresh_progress()
+        selected = self.segment_editor.current_segment()
+        if selected is not None:
+            self._update_current_tm(selected)
         self.statusBar().showMessage(
             f'Zmieniono status {len(segments)} segmentów.', 3000
         )
@@ -435,6 +457,104 @@ class MainWindow(QMainWindow):
             self.current_project, segment.source, limit=5, threshold=0.45
         )
         self.tm_panel.set_matches(matches)
+
+    def _refresh_tm_context(self) -> None:
+        segment = self.segment_editor.current_segment()
+        if segment is not None:
+            self._update_current_tm(segment)
+        else:
+            self.tm_panel.set_matches([])
+
+    def _update_tm_threshold(self, threshold: float) -> None:
+        if self.project_service is None or self.current_project is None:
+            return
+        try:
+            self.project_service.set_tm_threshold(self.current_project, threshold)
+            self._refresh_tm_context()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można zmienić progu TM:\n{exc}')
+            self.tm_panel.set_threshold(self.project_service.get_tm_threshold(self.current_project))
+
+    def _safe_attach_tm_database(self) -> None:
+        if self.current_project is None or self.project_service is None:
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self, 'Otwórz lub utwórz zewnętrzną bazę TM',
+            'translation_memory.sqlite', 'SQLite (*.sqlite *.db)'
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        if not path.suffix:
+            path = path.with_suffix('.sqlite')
+        if path.suffix.casefold() not in {'.sqlite', '.db'}:
+            QMessageBox.warning(self, 'GameCAT', 'Baza TM musi mieć rozszerzenie .sqlite lub .db.')
+            return
+        try:
+            self.project_service.attach_tm_database(self.current_project, path)
+        except Exception as exc:
+            QMessageBox.critical(self, 'GameCAT', f'Nie można podłączyć TM:\n{exc}')
+            return
+        self.tm_panel.set_storage_path(path)
+        self._refresh_tm_context()
+        self.statusBar().showMessage(f'Aktywna zewnętrzna TM: {path}', 7000)
+
+    def _safe_use_project_tm_database(self) -> None:
+        if self.current_project is None or self.project_service is None:
+            return
+        try:
+            self.project_service.use_project_tm_database(self.current_project)
+        except Exception as exc:
+            QMessageBox.critical(self, 'GameCAT', f'Nie można zmienić TM:\n{exc}')
+            return
+        self.tm_panel.set_storage_path(None)
+        self._refresh_tm_context()
+        self.statusBar().showMessage('Aktywna pamięć TM w projekcie.', 5000)
+
+    def _safe_import_tm(self) -> None:
+        if self.current_project is None or self.project_service is None:
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self, 'Importuj pamięć tłumaczeniową',
+            filter='TM (*.csv *.json);;CSV (*.csv);;JSON (*.json)'
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        future = self.project_service.import_tm_file_async(self.current_project, path)
+        self._watch_future(
+            future,
+            lambda count: self._tm_imported(count),
+            'Import TM',
+        )
+
+    def _tm_imported(self, count: int) -> None:
+        self._refresh_tm_context()
+        self.statusBar().showMessage(f'TM: dodano {count} nowych par (bez duplikatów).', 6000)
+
+    def _safe_export_tm(self) -> None:
+        if self.current_project is None or self.project_service is None:
+            return
+        filename, selected_filter = QFileDialog.getSaveFileName(
+            self, 'Eksportuj aktywną TM', 'translation_memory.csv',
+            'CSV (*.csv);;JSON (*.json)'
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        if not path.suffix:
+            path = path.with_suffix('.json' if selected_filter.startswith('JSON') else '.csv')
+        if path.suffix.casefold() not in {'.json', '.csv'}:
+            QMessageBox.warning(self, 'GameCAT', 'Eksport TM obsługuje tylko CSV/JSON.')
+            return
+        future = self.project_service.export_tm_file_async(self.current_project, path)
+        self._watch_future(
+            future,
+            lambda count: self.statusBar().showMessage(
+                f'Wyeksportowano {count} par TM do {path}.', 6000
+            ),
+            'Eksport TM',
+        )
 
     def _safe_sync_tm(self) -> None:
         try:

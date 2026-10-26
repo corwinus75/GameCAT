@@ -1,0 +1,18 @@
+[
+  {
+    "source": "Take the sword.",
+    "target": "Weź miecz.",
+    "source_language": "en",
+    "target_language": "pl",
+    "origin_project": "GameCAT Demo",
+    "created_at": "2026-10-20T08:00:00+00:00"
+  },
+  {
+    "source": "The gate is closed.",
+    "target": "Brama jest zamknięta.",
+    "source_language": "en",
+    "target_language": "pl",
+    "origin_project": "GameCAT Demo",
+    "created_at": "2026-10-20T08:00:00+00:00"
+  }
+]
