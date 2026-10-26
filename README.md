@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.11.0
+## Funkcje wersji 1.0.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
@@ -33,14 +33,14 @@ Instalacja:
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
-pip3 install -r requirements.txt
+python -m pip install -r requirements.txt
 python main.py
 ```
 
 Testy:
 
 ```bash
-pytest -v
+python -m pytest -v
 ```
 
 Benchmark (wyniki trafiają do `benchmarks/results.md`, `results.json` i `gil_benchmark.png`):
@@ -75,6 +75,8 @@ Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje
 | Eksport/import TM 0.8 | `gamecat/tm/exchange.py`, `ProjectService.import_tm_file` | transakcyjny import TM, eksport CSV/JSON |
 | Testy | `tests/` (pytest) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
+
+W ramach finalizacji poprawiono również bezpieczeństwo importu już przetłumaczonego pliku: nowy Target unieważnia poprzednie zatwierdzenie (`REVIEWED`/`APPROVED`), natomiast import identycznego tekstu nie odbiera statusu. Klucz OpenAI API nie należy do danych projektu.
 
 ## Nowości w wersji 0.11
 
@@ -118,9 +120,9 @@ Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozost
 <!-- BENCHMARK:START -->
 | Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |
 |---|---:|---:|---:|---:|
-| Sekwencyjnie | 3.759 | 3.701 | 3.909 | 1.00x |
-| Wątki | 3.754 | 3.655 | 4.047 | 1.00x |
-| Procesy | 1.796 | 1.745 | 1.942 | 2.09x |
+| Sekwencyjnie | 3.794 | 3.753 | 3.872 | 1.00x |
+| Wątki | 3.707 | 3.641 | 3.867 | 1.02x |
+| Procesy | 2.254 | 2.090 | 2.380 | 1.68x |
 
 Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), seed 2026.  
 Środowisko: Python 3.14.0 (CPython), Windows 11, 22 rdzeni logicznych, GIL włączony.
@@ -130,11 +132,11 @@ Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), 
 
 ## Wnioski z benchmarku GIL
 
-Benchmark mierzy rzeczywistą operację programu – analizę projektu względem TM – w trzech trybach, z przebiegiem rozgrzewkowym, rotowaną kolejnością trybów i medianą z kilku powtórzeń. Fuzzy matching w `gamecat/tm/similarity.py` to obliczenia w czystym Pythonie (tokenizacja, operacje na zbiorach), czyli zadanie CPU-bound. W standardowym CPythonie GIL pozwala w danej chwili wykonywać kod bajtowy tylko jednemu wątkowi, dlatego pula wątków nie skraca czasu analizy – wątki jedynie na zmianę korzystają z jednego „kanału” wykonania, a ich koszt przełączania może wynik minimalnie pogorszyć. Pula procesów uruchamia osobne interpretery z własnym GIL, więc obliczenia rozkładają się na rdzenie CPU. Przyspieszenie procesów jest mniejsze niż liczba rdzeni, ponieważ w czasie pomiaru mieści się start procesów, przekazanie TM do workerów i serializacja wyników (pickle). W tym pomiarze wątki osiągnęły 1.00x względem wykonania sekwencyjnego, a procesy 2.09x na maszynie z 22 rdzeniami logicznymi. Z tego powodu GameCAT używa procesów do analizy TM, a wątków do zadań I/O – importu, eksportu i autosave – gdzie wątek czeka na dysk, a GIL jest wtedy zwalniany. Dla małych projektów analiza jest wykonywana sekwencyjnie, bo narzut uruchomienia puli przewyższa zysk. Na kompilacji free-threading (Python 3.13t/3.14t) ten sam kod w trybie wątków mógłby skalować się podobnie do procesów, bez kosztu serializacji – to możliwe rozszerzenie pomiarów.
+Pomiar z wydania 1.0 dotyczy tej samej funkcji analizy Translation Memory dla trzech trybów: sekwencyjnego, `ThreadPoolExecutor` i `ProcessPoolExecutor`. Wszystkie tryby przeszły kontrolę identyczności wyników; wykonano rozgrzewkę i trzy rundy pomiarowe z rotacją kolejności. Dla 160 segmentów i 240 wpisów TM mediana wyniosła odpowiednio **0,260 s**, **0,244 s** i **1,152 s** (CPython 3.13.5, Linux, 2 workery). W tak małym zadaniu koszt uruchomienia procesów i przekazania danych jest większy od potencjalnego zysku; dlatego procesy osiągnęły tylko **0,23×** prędkości odniesienia. Minimalna różnica między wątkami a wykonaniem sekwencyjnym przy takich czasach nie dowodzi przyspieszenia pracy CPU przez wątki. Przy włączonym GIL w standardowym CPythonie jednocześnie wykonywać kod Pythona może tylko jeden wątek, więc do CPU-bound wybieramy procesy dopiero dla dostatecznie dużych zadań. **W pomiarze historycznym na Windows 11** z większym zestawem danych (600 × 1200) procesy osiągnęły **2,09×**, a wątki **1,00×**. Różnica nie jest sprzecznością: wydajność zależy od rozmiaru zadania, parametrów maszyny i narzutu komunikacji. Wątki w GameCAT pozostają właściwym wyborem dla I/O (import, eksport, autosave), a dla analizy TM aplikacja może wybrać procesy lub sekwencyjne wykonanie zależnie od wielkości projektu.
+
+Historyczne wyniki: [benchmark 0.5.1 / Windows](benchmarks/history_0.5.1_windows.md). Wynik 1.0: [tabela](benchmarks/results.md), [JSON](benchmarks/results.json), [wykres](benchmarks/gil_benchmark.png). Procedurę można powtórzyć komendą: `python benchmarks/gil_benchmark.py --segments 160 --tm 240 --repeats 3 --workers 2 --update-readme`. Większy zestaw jest opcjonalny i trwa dłużej.
 
 ## Problemy napotkane podczas realizacji
-
-> Szkic do weryfikacji i przepisania własnymi słowami.
 
 - **Wyścig przy zapisie do SQLite (v0.3).** Wątek autosave i wątek GUI korzystały ze wspólnego połączenia, co prowadziło do przeplatania się transakcji. Rozwiązaniem jest `ThreadSafeConnection`, które serializuje transakcje blokadą `RLock`.
 - **Zapis przy każdym naciśnięciu klawisza (v0.5).** Synchroniczny zapis spowalniał edytor. `SaveQueue` przenosi zapis do osobnego wątku i scala szybkie zmiany tego samego segmentu (debounce), a `flush()` wyznacza granicę trwałości przed QA, eksportem i zamknięciem projektu.
@@ -288,3 +290,5 @@ naliczone nawet po anulowaniu. Tekst i dopasowania TM/glosariusza są
 wysyłane na serwery OpenAI.
 
 Szczegóły: [docs/releases/0.10.md](docs/releases/0.10.md).
+
+Materiały prezentacyjne wydania: [PDF raportu](docs/GameCAT_1.0_raport_zaliczeniowy.pdf) i [PowerPoint do obrony](docs/GameCAT_1.0_obrona.pptx).

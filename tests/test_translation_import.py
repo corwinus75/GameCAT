@@ -75,3 +75,42 @@ def test_import_translation_txt_rejects_more_rows_than_project(tmp_path: Path):
             service.import_translation_file_async(project, translation).result(timeout=5)
     finally:
         service.close()
+
+
+def test_reimport_changed_translation_demotes_approved_segment(tmp_path: Path):
+    """An imported revision must not retain a human approval of older text."""
+    service, project = _project_with_source(tmp_path)
+    incoming = tmp_path / 'translation.txt'
+    try:
+        first = service.list_segments(project.id)[0]
+        first.target = 'Witaj'
+        first.status = SegmentStatus.APPROVED
+        service.save_segment(first)
+        incoming.write_text('Cześć\n\n', encoding='utf-8')
+
+        service.import_translation_file_async(project, incoming).result(timeout=5)
+
+        after = service.list_segments(project.id)[0]
+        assert after.source == 'Hello'
+        assert after.target == 'Cześć'
+        assert after.status is SegmentStatus.TRANSLATED
+    finally:
+        service.close()
+
+
+def test_reimport_unchanged_translation_preserves_reviewed_status(tmp_path: Path):
+    """Identical imports should not invalidate a completed human review."""
+    service, project = _project_with_source(tmp_path)
+    incoming = tmp_path / 'translation.txt'
+    try:
+        first = service.list_segments(project.id)[0]
+        first.target = 'Witaj'
+        first.status = SegmentStatus.REVIEWED
+        service.save_segment(first)
+        incoming.write_text('Witaj\n\n', encoding='utf-8')
+
+        service.import_translation_file_async(project, incoming).result(timeout=5)
+
+        assert service.list_segments(project.id)[0].status is SegmentStatus.REVIEWED
+    finally:
+        service.close()

@@ -447,10 +447,15 @@ class ProjectService:
             if segment is None:
                 unmatched += 1
                 continue
-            segment.target = item.target
-            if item.target and segment.status is SegmentStatus.NEW:
+            if segment.target != item.target:
+                # An imported revision invalidates prior human review/approval.
+                # Never leave REVIEWED/APPROVED attached to a different Target.
+                segment.target = item.target
+                segment.status = (SegmentStatus.TRANSLATED if item.target.strip()
+                                  else SegmentStatus.NEW)
+            elif item.target.strip() and segment.status is SegmentStatus.NEW:
                 segment.status = SegmentStatus.TRANSLATED
-            elif not item.target and segment.status is SegmentStatus.TRANSLATED:
+            elif not item.target.strip() and segment.status is SegmentStatus.TRANSLATED:
                 segment.status = SegmentStatus.NEW
             changed.append(segment)
         updated = self.segments.update_many(changed)
