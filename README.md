@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.5
+## Funkcje wersji 0.5.1
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
@@ -11,9 +11,9 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
 - QA placeholderów, tagów, spacji i terminologii,
 - glosariusz,
 - Translation Memory z fuzzy matching,
-- matcher równoległy `ProcessPoolExecutor`,
+- analiza projektu względem TM (progi 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak) sekwencyjnie, w wątkach lub w procesach, z pretranslacją dopasowań 100%,
 - zadania I/O przez `ThreadPoolExecutor`,
-- autosave z `Queue` i `Lock`,
+- nieblokujący autosave z `Queue`, scalaniem szybkich zmian i `Lock`,
 - GUI PySide6,
 - benchmark GIL: sequential / threads / processes.
 
@@ -30,7 +30,7 @@ Instalacja:
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 python main.py
 ```
 
@@ -40,37 +40,70 @@ Testy:
 pytest -v
 ```
 
-Benchmark:
+Benchmark (wyniki trafiają do `benchmarks/results.md`, `results.json` i `gil_benchmark.png`):
 
 ```bash
-python benchmarks/gil_benchmark.py
+python benchmarks/gil_benchmark.py --update-readme   # pełny pomiar + tabela w README
+python benchmarks/gil_benchmark.py --quick           # szybkie sprawdzenie działania
 ```
+
+Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje deterministycznie `benchmarks/dataset.py`.
 
 ## Mapowanie wymagań zaliczeniowych
 
-| Zagadnienie | Gdzie w kodzie |
-|---|---|
-| Dekorator funkcji | `gamecat/utils/decorators.py -> measure_time()` |
-| Dekorator z parametrami | `gamecat/utils/decorators.py -> retry(attempts, delay)` |
-| Dekorator metody korzystający z `self` | `gamecat/utils/decorators.py -> requires_project()` + `gamecat/gui/main_window.py` |
-| `@property` + setter | `gamecat/models/segment.py -> Segment.target`, `Segment.status` |
-| Iterator | `gamecat/utils/iterators.py -> SegmentIterator` |
-| Generator / wyrażenie generujące | `gamecat/utils/generators.py`, importer TXT, matcher TM |
-| Regex z grupami nazwanymi | `gamecat/qa/patterns.py -> BRACE_RE`, `PRINTF_OR_TAG_RE` |
-| Wątki | `gamecat/concurrency/io_workers.py -> ThreadPoolExecutor` |
-| Synchronizacja Queue/Lock | `gamecat/concurrency/save_queue.py -> SaveQueue` |
-| Procesy | `gamecat/tm/parallel_matcher.py -> ProcessPoolExecutor` |
-| GIL | `benchmarks/gil_benchmark.py` |
-| GUI | `gamecat/gui/` |
-| Testy | `tests/` |
-| Logging | `gamecat/logging_config.py` |
+| Zagadnienie | Gdzie w kodzie | Gdzie działa w programie |
+|---|---|---|
+| Dekorator funkcji + `functools.wraps` | `gamecat/utils/decorators.py → measure_time` | czasy importu, eksportu, QA projektu i analizy TM w logu `gamecat.timing` (`ProjectService`) |
+| Dekorator z parametrami | `gamecat/utils/decorators.py → retry(attempts, delay, exceptions, when)` | `SaveQueue._save_batch` – ponowienie zapisu, gdy plik bazy blokuje inny proces (`database is locked`) |
+| Dekorator metody korzystający z `self` | `gamecat/utils/decorators.py → requires_project` | metody `MainWindow` wymagające otwartego projektu |
+| `@property` z setterem | `gamecat/models/segment.py → Segment.target`, `Segment.status` (walidacja statusu) | każda zmiana tłumaczenia/statusu |
+| `@staticmethod` | `SaveQueue._snapshot`, `SaveQueue._coalesce`, `ProjectService._export_file` | autosave, eksport |
+| Własny iterator (`__iter__`, `__next__`) | `gamecat/database/segment_iterator.py → SegmentBatchIterator` | QA całego projektu, eksport, analiza TM – segmenty czytane z SQLite partiami |
+| Generatory (`yield`) | `gamecat/importers/*.py`, `benchmarks/dataset.py → _sentences` | strumieniowy import TXT/CSV/JSON |
+| Wyrażenia generujące | `ProjectService._import_file`, `ProjectService.analyze_project_tm`, `tm/analysis.py` | import w jednej transakcji, przygotowanie danych do analizy |
+| Regex z grupami nazwanymi | `gamecat/qa/patterns.py → BRACE_RE`, `PRINTF_OR_TAG_RE` | QA placeholderów i tagów |
+| Regex (tokenizacja) | `gamecat/tm/similarity.py → _WORD_RE`, `tm/analysis.py → _WORD_RE` | fuzzy matching TM, liczenie słów w analizie |
+| Wątki + `Queue` / `Lock` / `RLock` | `gamecat/concurrency/save_queue.py → SaveQueue`, `concurrency/io_workers.py → IOWorkerPool`, `database/connection.py → ThreadSafeConnection` | autosave w tle, import/eksport bez blokowania GUI |
+| Procesy | `gamecat/tm/analysis.py → analyze()` (`ProcessPoolExecutor`, kontekst `spawn`, `initializer`) | **TM → Analiza projektu względem TM** (`Ctrl+Shift+A`) |
+| Pomiar GIL | `benchmarks/gil_benchmark.py` | ta sama analiza TM: sekwencyjnie / wątki / procesy |
+| GUI | `gamecat/gui/` | PySide6 |
+| Testy | `tests/` (pytest) | |
+| Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
+
+## Analiza projektu względem TM (v0.5.1)
+
+**TM → Analiza projektu względem TM…** porównuje każdy segment projektu ze wszystkimi wpisami pamięci tłumaczeniowej dla pary językowej projektu i pokazuje liczbę segmentów oraz słów w progach dopasowania. W oknie można wybrać tryb wykonania (procesy, wątki, sekwencyjnie) i liczbę workerów, co pozwala porównać tryby bezpośrednio w programie. Przycisk **Wstaw dopasowania 100%** wpisuje tłumaczenia z TM do segmentów, które nie mają jeszcze tłumaczenia (istniejące tłumaczenia nie są nadpisywane).
+
+Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozostaje responsywne. Pamięć tłumaczeniowa jest przekazywana do każdego procesu tylko raz, przez `initializer` puli; dopasowania dokładne są wyszukiwane słownikiem w O(1), a fuzzy matching liczony jest tylko dla pozostałych segmentów. Projekty mniejsze niż 200 segmentów są analizowane sekwencyjnie, bo start puli procesów kosztowałby więcej niż sama praca.
+
+## Wyniki benchmarku GIL
+
+<!-- BENCHMARK:START -->
+| Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |
+|---|---:|---:|---:|---:|
+| Sekwencyjnie | 3.759 | 3.701 | 3.909 | 1.00x |
+| Wątki | 3.754 | 3.655 | 4.047 | 1.00x |
+| Procesy | 1.796 | 1.745 | 1.942 | 2.09x |
+
+Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), seed 2026.  
+Środowisko: Python 3.14.0 (CPython), Windows 11, 22 rdzeni logicznych, GIL włączony.
+
+![Wykres benchmarku](benchmarks/gil_benchmark.png)
+<!-- BENCHMARK:END -->
 
 ## Wnioski z benchmarku GIL
 
-Benchmark wykazał, że najwydajniejszą spośród badanych metod była wieloprocesowość, osiągając niemal dwukrotne przyspieszenie względem wykonywania sekwencyjnego.
+Benchmark mierzy rzeczywistą operację programu – analizę projektu względem TM – w trzech trybach, z przebiegiem rozgrzewkowym, rotowaną kolejnością trybów i medianą z kilku powtórzeń. Fuzzy matching w `gamecat/tm/similarity.py` to obliczenia w czystym Pythonie (tokenizacja, operacje na zbiorach), czyli zadanie CPU-bound. W standardowym CPythonie GIL pozwala w danej chwili wykonywać kod bajtowy tylko jednemu wątkowi, dlatego pula wątków nie skraca czasu analizy – wątki jedynie na zmianę korzystają z jednego „kanału” wykonania, a ich koszt przełączania może wynik minimalnie pogorszyć. Pula procesów uruchamia osobne interpretery z własnym GIL, więc obliczenia rozkładają się na rdzenie CPU. Przyspieszenie procesów jest mniejsze niż liczba rdzeni, ponieważ w czasie pomiaru mieści się start procesów, przekazanie TM do workerów i serializacja wyników (pickle). [Uzupełnij po pomiarze: uzyskane przyspieszenie procesów i wątków z tabeli powyżej oraz liczba rdzeni.] Z tego powodu GameCAT używa procesów do analizy TM, a wątków do zadań I/O – importu, eksportu i autosave – gdzie wątek czeka na dysk, a GIL jest wtedy zwalniany. Dla małych projektów analiza jest wykonywana sekwencyjnie, bo narzut uruchomienia puli przewyższa zysk. Na kompilacji free-threading (Python 3.13t/3.14t) ten sam kod w trybie wątków mógłby skalować się podobnie do procesów, bez kosztu serializacji – to możliwe rozszerzenie pomiarów.
 
-Wyniki są zgodne z możliwością omijania ograniczeń GIL przez wykorzystanie osobnych procesów. W standardowym Pythonie GIL ogranicza równoległe wykonywanie kodu Pythona przez wątki w obrębie jednego interpretera.
+## Problemy napotkane podczas realizacji
 
+> Szkic do weryfikacji i przepisania własnymi słowami.
+
+- **Wyścig przy zapisie do SQLite (v0.3).** Wątek autosave i wątek GUI korzystały ze wspólnego połączenia, co prowadziło do przeplatania się transakcji. Rozwiązaniem jest `ThreadSafeConnection`, które serializuje transakcje blokadą `RLock`.
+- **Zapis przy każdym naciśnięciu klawisza (v0.5).** Synchroniczny zapis spowalniał edytor. `SaveQueue` przenosi zapis do osobnego wątku i scala szybkie zmiany tego samego segmentu (debounce), a `flush()` wyznacza granicę trwałości przed QA, eksportem i zamknięciem projektu.
+- **Częściowy import.** Zapis każdego segmentu w osobnej transakcji był wolny, a błąd w połowie pliku zostawiał w bazie część danych. Import działa teraz w jednej transakcji, a import tłumaczeń najpierw dopasowuje wszystkie wiersze w pamięci i zapisuje je jednym `executemany`.
+- **Źle dobrana granulacja procesów.** Pierwsza wersja równoległego matchera tworzyła pulę procesów dla pojedynczego zapytania i przesyłała TM z każdym zadaniem; narzut startu procesów był większy niż zysk. Procesy opłacają się dopiero dla analizy całego projektu, z TM przekazaną raz przez `initializer`.
+- **Wiarygodność pomiarów.** Pierwszy benchmark mierzył tryby zawsze w tej samej kolejności i bez rozgrzewki, przez co wyniki potrafiły sugerować przyspieszenie wątków, sprzeczne z działaniem GIL. Obecna wersja rozgrzewa każdy tryb, rotuje kolejność i raportuje medianę.
 
 ## Import i eksport w GUI (v0.2)
 
@@ -84,6 +117,7 @@ Wyniki są zgodne z możliwością omijania ograniczeń GIL przez wykorzystanie 
 
 Import i eksport są wykonywane przez pulę wątków I/O, natomiast GUI odpytuje stan operacji przez `QTimer`, dzięki czemu interfejs nie jest aktualizowany bezpośrednio z wątku roboczego.
 
+
 ## QA w GUI (v0.3)
 
 - Panel **QA → Bieżący** aktualizuje się automatycznie po wybraniu segmentu i po każdej zmianie pola Target.
@@ -94,6 +128,7 @@ Import i eksport są wykonywane przez pulę wątków I/O, natomiast GUI odpytuje
 - Panel glosariusza jest wczytywany razem z projektem i te same wpisy są używane przy walidacji pojedynczego segmentu i pełnego projektu.
 
 W v0.3 usunięto także wyścig przy jednoczesnym zapisie do SQLite z wątku autosave i z głównego wątku. Dostęp transakcyjny do współdzielonego połączenia jest serializowany blokadą `RLock`.
+
 
 ## Translation Memory i import tłumaczeń (v0.4)
 
@@ -112,6 +147,7 @@ Niepuste zaimportowane tłumaczenie zmienia status segmentu `NEW` na `TRANSLATED
 Panel **TM** jest teraz aktywny. Po wybraniu segmentu program wyszukuje do pięciu podobnych wpisów pamięci dla pary językowej projektu. Dwukrotne kliknięcie sugestii wstawia jej Target do bieżącego segmentu.
 
 Aby zasilić pamięć tłumaczeniową, wybierz **TM → Dodaj tłumaczenia projektu do pamięci**. Do TM trafiają wyłącznie segmenty z niepustym Target. Identyczne pary Source/Target dla tej samej pary językowej nie są dodawane ponownie.
+
 
 ## Autosave i współbieżne I/O (v0.5)
 

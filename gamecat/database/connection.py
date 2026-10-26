@@ -33,6 +33,10 @@ class ThreadSafeConnection:
     def execute(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
         return self._connection.execute(*args, **kwargs)
 
+    def executemany(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+        with self._lock:
+            return self._connection.executemany(*args, **kwargs)
+
     def executescript(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
         with self._lock:
             return self._connection.executescript(*args, **kwargs)

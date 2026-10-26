@@ -1,10 +1,27 @@
 from __future__ import annotations
+from collections.abc import Iterable
 from datetime import datetime
 import sqlite3
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment
 from gamecat.models.glossary import GlossaryEntry
 from gamecat.models.translation_memory import TranslationMemoryEntry
+from gamecat.database.segment_iterator import SegmentBatchIterator
+
+_INSERT_SEGMENT = '''INSERT INTO segments(project_id,position,key,source,target,status,comment,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)'''
+_UPDATE_SEGMENT = 'UPDATE segments SET target=?,status=?,comment=?,updated_at=? WHERE id=?'
+
+
+def _insert_params(segment: Segment) -> tuple:
+    return (segment.project_id, segment.position, segment.key, segment.source, segment.target,
+            segment.status.value, segment.comment, segment.created_at.isoformat(), segment.updated_at.isoformat())
+
+
+def _update_params(segment: Segment) -> tuple:
+    if segment.id is None:
+        raise ValueError('segment has no id')
+    return (segment.target, segment.status.value, segment.comment, segment.updated_at.isoformat(), segment.id)
 
 
 def _dt(value: str) -> datetime:
@@ -41,10 +58,25 @@ class SegmentRepository:
     def create(self, segment: Segment) -> Segment:
         if segment.project_id is None: raise ValueError('segment requires project_id')
         with self.connection:
-            cur = self.connection.execute('''INSERT INTO segments(project_id,position,key,source,target,status,comment,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?)''', (segment.project_id, segment.position, segment.key, segment.source, segment.target, segment.status.value, segment.comment, segment.created_at.isoformat(), segment.updated_at.isoformat()))
+            cur = self.connection.execute(_INSERT_SEGMENT, _insert_params(segment))
         segment.id = cur.lastrowid
         return segment
+
+    def create_many(self, segments: Iterable[Segment]) -> list[Segment]:
+        """Zapisz wiele segmentów w jednej transakcji (wszystko albo nic).
+
+        *segments* może być generatorem – jest konsumowany wewnątrz transakcji,
+        więc błąd parsowania w połowie pliku cofa również już wstawione wiersze.
+        """
+        created: list[Segment] = []
+        with self.connection:
+            for segment in segments:
+                if segment.project_id is None:
+                    raise ValueError('segment requires project_id')
+                cur = self.connection.execute(_INSERT_SEGMENT, _insert_params(segment))
+                segment.id = cur.lastrowid
+                created.append(segment)
+        return created
     def _from_row(self, row: sqlite3.Row) -> Segment:
         return Segment(row['source'], row['position'], row['key'], row['target'], row['status'], row['comment'], row['id'], row['project_id'], _dt(row['created_at']), _dt(row['updated_at']))
     def get(self, segment_id: int | None) -> Segment:
@@ -58,10 +90,27 @@ class SegmentRepository:
             rows = self.connection.execute('SELECT * FROM segments WHERE project_id=? ORDER BY position,id', (project_id,)).fetchall()
         return [self._from_row(r) for r in rows]
     def update(self, segment: Segment) -> None:
-        if segment.id is None: raise ValueError('segment has no id')
+        params = _update_params(segment)
         with self.connection:
-            self.connection.execute('UPDATE segments SET target=?,status=?,comment=?,updated_at=? WHERE id=?',
-                                    (segment.target, segment.status.value, segment.comment, segment.updated_at.isoformat(), segment.id))
+            self.connection.execute(_UPDATE_SEGMENT, params)
+
+    def update_many(self, segments: Iterable[Segment]) -> int:
+        """Zaktualizuj wiele segmentów w jednej transakcji; zwraca ich liczbę."""
+        params = [_update_params(segment) for segment in segments]
+        if not params:
+            return 0
+        with self.connection:
+            self.connection.executemany(_UPDATE_SEGMENT, params)
+        return len(params)
+
+    def iter_for_project(self, project_id: int, batch_size: int = 500) -> SegmentBatchIterator:
+        """Zwróć iterator czytający segmenty projektu partiami."""
+        return SegmentBatchIterator(self.connection, project_id, self._from_row, batch_size)
+
+    def count_for_project(self, project_id: int) -> int:
+        with self.connection:
+            row = self.connection.execute('SELECT COUNT(*) FROM segments WHERE project_id=?', (project_id,)).fetchone()
+        return int(row[0])
 
 
 class GlossaryRepository:

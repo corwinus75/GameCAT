@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from collections.abc import Iterable
 from concurrent.futures import Future
 from dataclasses import dataclass
 from gamecat.concurrency.io_workers import IOWorkerPool
@@ -24,7 +25,11 @@ from gamecat.models.glossary import GlossaryEntry
 from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.tm.matcher import TMMatch, find_matches
+from gamecat.tm.analysis import ExecutionMode, TMAnalysisReport, analyze
 from gamecat.exceptions import ImportFormatError
+from gamecat.database.segment_iterator import SegmentBatchIterator
+from gamecat.qa.project_scan import ProjectQAReport, scan_segments
+from gamecat.utils.decorators import measure_time
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,9 +74,27 @@ class ProjectService:
         self.flush_saves()
         return self.segments.list_for_project(project_id)
 
+    def iter_segments(self, project_id: int, batch_size: int = 500) -> SegmentBatchIterator:
+        """Iterator po segmentach projektu czytający bazę partiami.
+
+        Przed utworzeniem iteratora opróżniana jest kolejka autosave, aby
+        operacje na całym projekcie (QA, eksport, analiza TM) widziały
+        najnowsze zmiany z edytora.
+        """
+        self.flush_saves()
+        return self.segments.iter_for_project(project_id, batch_size)
+
+    @measure_time
+    def run_project_qa(self, project: Project) -> ProjectQAReport:
+        """Sprawdź cały projekt, czytając segmenty strumieniowo z bazy."""
+        if project.id is None:
+            raise ValueError('project must be persisted before QA')
+        return scan_segments(self.iter_segments(project.id), self.list_glossary(project.id))
+
     def list_glossary(self, project_id: int | None) -> list[GlossaryEntry]:
         return self.glossary.list_for_project(project_id)
 
+    @measure_time
     def _import_file(
         self,
         project: Project,
@@ -90,13 +113,16 @@ class ProjectService:
             imported = import_json(path)
         else:
             raise ValueError(f'Unsupported import format: {suffix}')
-        result: list[Segment] = []
+        # Wyrażenie generujące: parsowanie pliku i budowa segmentów odbywa się
+        # leniwie, wewnątrz jednej transakcji – błąd w połowie pliku cofa całość.
+        segments = (
+            Segment(item.source, item.position, item.key, item.target, project_id=project.id)
+            for item in imported
+        )
         try:
-            for item in imported:
-                result.append(self.segments.create(Segment(item.source, item.position, item.key, item.target, project_id=project.id)))
+            return self.segments.create_many(segments)
         except (UnicodeError, ValueError, KeyError) as exc:
             raise ImportFormatError(f'Cannot import {path.name}: {exc}') from exc
-        return result
 
     def import_file_async(
         self,
@@ -121,6 +147,7 @@ class ProjectService:
         self.queue_segment_save(segment)
         self.flush_saves()
 
+    @measure_time
     def _import_translation_file(
         self,
         project: Project,
@@ -156,8 +183,10 @@ class ProjectService:
         for key in duplicate_keys:
             by_key.pop(key, None)
 
-        updated = 0
+        changed: list[Segment] = []
         unmatched = 0
+        # Najpierw dopasowanie w pamięci, dopiero potem jeden zapis: błąd
+        # (np. niejednoznaczny klucz) nie zostawia częściowo zaimportowanego pliku.
         for item in imported:
             segment: Segment | None = None
             if item.key is not None:
@@ -174,8 +203,8 @@ class ProjectService:
                 segment.status = SegmentStatus.TRANSLATED
             elif not item.target and segment.status is SegmentStatus.TRANSLATED:
                 segment.status = SegmentStatus.NEW
-            self.save_segment(segment)
-            updated += 1
+            changed.append(segment)
+        updated = self.segments.update_many(changed)
         return TranslationImportResult(total=len(imported), updated=updated, unmatched=unmatched)
 
     def import_translation_file_async(
@@ -219,8 +248,46 @@ class ProjectService:
         entries = self.translation_memory.list_for_languages(project.source_language, project.target_language)
         return find_matches(source, entries, limit=limit, threshold=threshold)
 
+    @measure_time
+    def analyze_project_tm(
+        self,
+        project: Project,
+        mode: ExecutionMode | str = ExecutionMode.PROCESSES,
+        workers: int | None = None,
+        min_parallel: int = 200,
+    ) -> TMAnalysisReport:
+        """Porównaj wszystkie segmenty projektu z TM tej pary językowej."""
+        if project.id is None:
+            raise ValueError('project must be persisted before TM analysis')
+        tm = [(e.source, e.target) for e in
+              self.translation_memory.list_for_languages(project.source_language, project.target_language)]
+        items = ((segment.id, segment.source) for segment in self.iter_segments(project.id)
+                 if segment.id is not None)
+        return analyze(items, tm, mode=mode, workers=workers, min_parallel=min_parallel)
+
+    def analyze_project_tm_async(self, project: Project, **kwargs) -> Future[TMAnalysisReport]:
+        """Uruchom analizę z wątku I/O, aby pula procesów nie blokowała GUI."""
+        return self.io.submit(self.analyze_project_tm, project, **kwargs)
+
+    def apply_exact_matches(self, project: Project, report: TMAnalysisReport) -> int:
+        """Pretranslacja: wstaw dopasowania 100% do segmentów bez tłumaczenia."""
+        if project.id is None:
+            raise ValueError('project must be persisted before pretranslation')
+        exact = {match.segment_id: match.tm_target for match in report.exact_matches()}
+        changed: list[Segment] = []
+        for segment in self.iter_segments(project.id):
+            target = exact.get(segment.id) if segment.id is not None else None
+            if target is None or segment.target:
+                continue
+            segment.target = target
+            if segment.status is SegmentStatus.NEW:
+                segment.status = SegmentStatus.TRANSLATED
+            changed.append(segment)
+        return self.segments.update_many(changed)
+
     @staticmethod
-    def _export_file(segments: list[Segment], path: Path, format_name: str) -> None:
+    @measure_time
+    def _export_file(segments: Iterable[Segment], path: Path, format_name: str) -> None:
         if format_name == 'txt':
             export_txt(segments, path)
         elif format_name == 'csv':
@@ -233,8 +300,36 @@ class ProjectService:
     def export_file_async(self, segments: list[Segment], path: Path, format_name: str) -> Future[None]:
         return self.io.submit(self._export_file, segments, path, format_name)
 
+    def _export_project(self, project: Project, path: Path, format_name: str) -> int:
+        if project.id is None:
+            raise ValueError('project must be persisted before export')
+        iterator = self.iter_segments(project.id)
+        counted = _CountingIterator(iterator)
+        self._export_file(counted, path, format_name)
+        return counted.count
+
+    def export_project_async(self, project: Project, path: Path, format_name: str) -> Future[int]:
+        """Eksportuj projekt w wątku I/O, czytając segmenty partiami z bazy."""
+        return self.io.submit(self._export_project, project, path, format_name)
+
     def close(self) -> None:
         # Stop accepting project work only after every queued edit reached SQLite.
         self.save_queue.close()
         self.io.close()
         self.connection.close()
+
+
+class _CountingIterator:
+    """Przezroczysta nakładka zliczająca elementy przechodzące przez iterator."""
+
+    def __init__(self, inner: Iterable[Segment]):
+        self._inner = iter(inner)
+        self.count = 0
+
+    def __iter__(self) -> _CountingIterator:
+        return self
+
+    def __next__(self) -> Segment:
+        item = next(self._inner)
+        self.count += 1
+        return item

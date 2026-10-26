@@ -38,8 +38,10 @@ def test_save_queue_coalesces_rapid_updates_for_same_segment():
         def __init__(self):
             self.saved: list[str] = []
 
-        def update(self, segment: Segment) -> None:
-            self.saved.append(segment.target)
+        def update_many(self, segments) -> int:
+            segments = list(segments)
+            self.saved.extend(segment.target for segment in segments)
+            return len(segments)
 
     repo = RecordingRepository()
     q = SaveQueue(repo, debounce_seconds=0.03)
@@ -105,3 +107,27 @@ def test_list_segments_flushes_pending_autosave(tmp_path: Path):
     assert rows[0].target == 'W kolejce'
     assert service.pending_save_count == 0
     service.close()
+
+
+def test_save_queue_retries_transient_lock():
+    import sqlite3
+
+    class LockedOnceRepository:
+        def __init__(self):
+            self.calls = 0
+            self.saved: list[str] = []
+
+        def update_many(self, segments) -> int:
+            self.calls += 1
+            if self.calls == 1:
+                raise sqlite3.OperationalError('database is locked')
+            segments = list(segments)
+            self.saved.extend(s.target for s in segments)
+            return len(segments)
+
+    repo = LockedOnceRepository()
+    q = SaveQueue(repo, debounce_seconds=0)
+    q.enqueue(Segment('Hello', 1, target='Cześć', id=1, project_id=1))
+    q.flush(); q.close()
+    assert repo.calls == 2
+    assert repo.saved == ['Cześć']

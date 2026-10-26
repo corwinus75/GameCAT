@@ -16,9 +16,9 @@ from gamecat.gui.project_dialog import ProjectDialog
 from gamecat.gui.qa_panel import QAPanel
 from gamecat.gui.segment_editor import SegmentEditor
 from gamecat.gui.tm_panel import TMPanel
+from gamecat.gui.tm_analysis_dialog import TMAnalysisDialog
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment
-from gamecat.qa.project_scan import scan_segments
 from gamecat.qa.validator import validate_segment
 from gamecat.services.project_service import ProjectService
 from gamecat.utils.decorators import requires_project
@@ -106,11 +106,15 @@ class MainWindow(QMainWindow):
         self.sync_tm_action = QAction('Dodaj tłumaczenia projektu do pamięci', self)
         self.sync_tm_action.triggered.connect(self._safe_sync_tm)
         tm_menu.addAction(self.sync_tm_action)
+        self.analyze_tm_action = QAction('Analiza projektu względem TM…', self)
+        self.analyze_tm_action.setShortcut(QKeySequence('Ctrl+Shift+A'))
+        self.analyze_tm_action.triggered.connect(self._safe_analyze_tm)
+        tm_menu.addAction(self.analyze_tm_action)
         self._sync_actions()
 
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
-        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action):
+        for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action):
             action.setEnabled(enabled)
 
     def _replace_service(self, service: ProjectService | None) -> None:
@@ -200,8 +204,7 @@ class MainWindow(QMainWindow):
 
     @requires_project
     def save_project(self) -> None:
-        if self.project_service is None:
-            raise RuntimeError('Project service is unavailable')
+        assert self.project_service is not None
         self.project_service.flush_saves()
         self._refresh_autosave_status()
         self.statusBar().showMessage('Projekt zapisany', 2500)
@@ -256,10 +259,29 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, 'GameCAT', str(exc))
 
+    def _safe_analyze_tm(self) -> None:
+        try:
+            self.analyze_tm()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def analyze_tm(self) -> None:
+        assert self.project_service is not None and self.current_project is not None
+        dialog = TMAnalysisDialog(self.project_service, self.current_project, self)
+        dialog.segments_changed.connect(self._reload_segments)
+        dialog.exec()
+
+    def _reload_segments(self) -> None:
+        if self.project_service is None or self.current_project is None:
+            return
+        self.segment_editor.set_segments(self.project_service.list_segments(self.current_project.id))
+        self.qa_panel.clear_project_report()
+
     @requires_project
     def sync_project_to_tm(self) -> None:
-        if self.project_service is None or self.current_project is None:
-            raise RuntimeError('Project service is unavailable')
+        # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
+        assert self.project_service is not None and self.current_project is not None
         created = self.project_service.sync_project_to_tm(self.current_project)
         segment = self.segment_editor.current_segment()
         if segment is not None:
@@ -282,11 +304,9 @@ class MainWindow(QMainWindow):
 
     @requires_project
     def run_project_qa(self) -> None:
-        if self.project_service is None or self.current_project is None:
-            raise RuntimeError('Project service is unavailable')
-        segments = self.project_service.list_segments(self.current_project.id)
-        glossary = self.project_service.list_glossary(self.current_project.id)
-        report = scan_segments(segments, glossary)
+        # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
+        assert self.project_service is not None and self.current_project is not None
+        report = self.project_service.run_project_qa(self.current_project)
         self.qa_panel.set_project_report(report)
         self.statusBar().showMessage(
             f'QA: {report.issue_count} problemów w {report.issue_segment_count} z {report.segment_count} segmentów.',
@@ -326,8 +346,8 @@ class MainWindow(QMainWindow):
 
     @requires_project
     def import_segments(self) -> None:
-        if self.project_service is None or self.current_project is None:
-            raise RuntimeError('Project service is unavailable')
+        # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
+        assert self.project_service is not None and self.current_project is not None
         filename, _ = QFileDialog.getOpenFileName(
             self,
             'Importuj plik źródłowy',
@@ -378,8 +398,8 @@ class MainWindow(QMainWindow):
 
     @requires_project
     def import_translation(self) -> None:
-        if self.project_service is None or self.current_project is None:
-            raise RuntimeError('Project service is unavailable')
+        # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
+        assert self.project_service is not None and self.current_project is not None
         if not self.project_service.list_segments(self.current_project.id):
             QMessageBox.information(self, 'GameCAT', 'Najpierw zaimportuj plik źródłowy.')
             return
@@ -436,10 +456,9 @@ class MainWindow(QMainWindow):
 
     @requires_project
     def export_segments(self) -> None:
-        if self.project_service is None or self.current_project is None:
-            raise RuntimeError('Project service is unavailable')
-        segments = self.project_service.list_segments(self.current_project.id)
-        if not segments:
+        # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
+        assert self.project_service is not None and self.current_project is not None
+        if self.project_service.segments.count_for_project(self.current_project.id) == 0:
             QMessageBox.information(self, 'GameCAT', 'Projekt nie zawiera segmentów do eksportu.')
             return
 
@@ -460,11 +479,11 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(f'Eksportowanie: {path.name}...')
-        future = self.project_service.export_file_async(segments, path, format_name)
+        future = self.project_service.export_project_async(self.current_project, path, format_name)
 
-        def exported(_: None) -> None:
+        def exported(count: int) -> None:
             self.statusBar().showMessage(
-                f'Wyeksportowano {len(segments)} segmentów do {path}',
+                f'Wyeksportowano {count} segmentów do {path}',
                 6000,
             )
 

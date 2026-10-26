@@ -8,3 +8,10 @@ class ImportFormatError(GameCATError):
 
 class DatabaseError(GameCATError):
     """Raised when a database operation fails."""
+
+
+class NoProjectError(GameCATError, RuntimeError):
+    """Raised when an operation requires an open project.
+
+    Dziedziczy także po ``RuntimeError`` dla zgodności z wcześniejszym API.
+    """

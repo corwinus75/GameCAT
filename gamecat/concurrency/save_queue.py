@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import queue
+import sqlite3
 import threading
 import time
 from collections import OrderedDict
 
 from gamecat.database.repositories import SegmentRepository
 from gamecat.models.segment import Segment
+from gamecat.utils.decorators import is_transient_sqlite_error, retry
 
 _SENTINEL = object()
 
@@ -65,15 +67,21 @@ class SaveQueue:
         with self._state_lock:
             self._pending_count -= count
 
-    def _save_batch(self, batch: list[Segment]) -> None:
-        # OrderedDict keeps first-seen order while replacing repeated edits with
-        # the newest snapshot of that segment.
+    @staticmethod
+    def _coalesce(batch: list[Segment]) -> list[Segment]:
+        """Zostaw tylko najnowszą migawkę każdego segmentu (kolejność pierwszego wystąpienia)."""
         latest: OrderedDict[int, Segment] = OrderedDict()
         for item in batch:
             key = item.id if item.id is not None else id(item)
             latest[key] = item
-        for item in latest.values():
-            self.repository.update(item)
+        return list(latest.values())
+
+    # Zapis jest idempotentny (UPDATE najnowszej migawki w jednej transakcji),
+    # więc można go bezpiecznie ponowić, gdy plik bazy chwilowo blokuje inny
+    # proces (np. klient synchronizacji chmury, antywirus, druga instancja).
+    @retry(attempts=3, delay=0.25, exceptions=(sqlite3.OperationalError,), when=is_transient_sqlite_error)
+    def _save_batch(self, batch: list[Segment]) -> None:
+        self.repository.update_many(self._coalesce(batch))
 
     def _worker(self) -> None:
         while True:

@@ -1,0 +1,67 @@
+{
+  "environment": {
+    "python": "3.14.0",
+    "implementation": "CPython",
+    "system": "Windows 11",
+    "processor": "Intel64 Family 6 Model 170 Stepping 4, GenuineIntel",
+    "cpu_count": 22,
+    "free_threading_build": false,
+    "gil_enabled": true,
+    "switch_interval_s": 0.005
+  },
+  "parameters": {
+    "segments": 600,
+    "tm_entries": 1200,
+    "repeats": 5,
+    "workers": 22,
+    "seed": 2026,
+    "similarity_calls_upper_bound": 720000
+  },
+  "results": [
+    {
+      "mode": "sequential",
+      "label": "Sekwencyjnie",
+      "median_s": 3.7591233999992255,
+      "min_s": 3.7005529000016395,
+      "max_s": 3.909111299999495,
+      "speedup": 1.0,
+      "times_s": [
+        3.909111299999495,
+        3.7005529000016395,
+        3.7591233999992255,
+        3.7143022999989626,
+        3.869744699997682
+      ]
+    },
+    {
+      "mode": "threads",
+      "label": "Wątki",
+      "median_s": 3.7540900999993028,
+      "min_s": 3.654708300000493,
+      "max_s": 4.046719699999812,
+      "speedup": 1.0013407509851517,
+      "times_s": [
+        3.7540900999993028,
+        3.654708300000493,
+        4.046719699999812,
+        3.7415856000006897,
+        3.852559699997073
+      ]
+    },
+    {
+      "mode": "processes",
+      "label": "Procesy",
+      "median_s": 1.796496200000547,
+      "min_s": 1.7454542999985279,
+      "max_s": 1.9416768999981286,
+      "speedup": 2.092475007738998,
+      "times_s": [
+        1.9137525000005553,
+        1.9416768999981286,
+        1.796496200000547,
+        1.7844742000015685,
+        1.7454542999985279
+      ]
+    }
+  ]
+}
