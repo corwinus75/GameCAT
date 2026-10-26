@@ -3,6 +3,7 @@ from pathlib import Path
 from concurrent.futures import Future
 from dataclasses import dataclass
 from gamecat.concurrency.io_workers import IOWorkerPool
+from gamecat.concurrency.save_queue import SaveQueue
 from gamecat.database.connection import open_database
 from gamecat.database.schema import initialize_schema
 from gamecat.database.repositories import GlossaryRepository, ProjectRepository, SegmentRepository, TranslationMemoryRepository
@@ -35,7 +36,12 @@ class TranslationImportResult:
 
 class ProjectService:
     """High-level project workflow independent of the GUI."""
-    def __init__(self, database_path: Path, max_io_workers: int = 4):
+    def __init__(
+        self,
+        database_path: Path,
+        max_io_workers: int = 4,
+        autosave_debounce_seconds: float = 0.20,
+    ):
         self.connection = open_database(database_path)
         initialize_schema(self.connection)
         self.projects = ProjectRepository(self.connection)
@@ -43,6 +49,7 @@ class ProjectService:
         self.glossary = GlossaryRepository(self.connection)
         self.translation_memory = TranslationMemoryRepository(self.connection)
         self.io = IOWorkerPool(max_io_workers)
+        self.save_queue = SaveQueue(self.segments, autosave_debounce_seconds)
 
     def create_project(self, name: str, source_language: str, target_language: str, source_format: str) -> Project:
         return self.projects.create(Project(name, source_language, target_language, source_format))
@@ -58,6 +65,8 @@ class ProjectService:
     def list_segments(self, project_id: int | None) -> list[Segment]:
         if project_id is None:
             return []
+        # Any read used by QA/export/TM must observe the latest editor state.
+        self.flush_saves()
         return self.segments.list_for_project(project_id)
 
     def list_glossary(self, project_id: int | None) -> list[GlossaryEntry]:
@@ -97,8 +106,20 @@ class ProjectService:
     ) -> Future[list[Segment]]:
         return self.io.submit(self._import_file, project, path, csv_columns)
 
+    @property
+    def pending_save_count(self) -> int:
+        return self.save_queue.pending_count
+
+    def queue_segment_save(self, segment: Segment) -> None:
+        self.save_queue.enqueue(segment)
+
+    def flush_saves(self) -> None:
+        self.save_queue.flush()
+
     def save_segment(self, segment: Segment) -> None:
-        self.segments.update(segment)
+        """Persist a segment synchronously while preserving autosave ordering."""
+        self.queue_segment_save(segment)
+        self.flush_saves()
 
     def _import_translation_file(
         self,
@@ -213,5 +234,7 @@ class ProjectService:
         return self.io.submit(self._export_file, segments, path, format_name)
 
     def close(self) -> None:
+        # Stop accepting project work only after every queued edit reached SQLite.
+        self.save_queue.close()
         self.io.close()
         self.connection.close()

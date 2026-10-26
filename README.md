@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.4
+## Funkcje wersji 0.5
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
@@ -112,3 +112,11 @@ Niepuste zaimportowane tłumaczenie zmienia status segmentu `NEW` na `TRANSLATED
 Panel **TM** jest teraz aktywny. Po wybraniu segmentu program wyszukuje do pięciu podobnych wpisów pamięci dla pary językowej projektu. Dwukrotne kliknięcie sugestii wstawia jej Target do bieżącego segmentu.
 
 Aby zasilić pamięć tłumaczeniową, wybierz **TM → Dodaj tłumaczenia projektu do pamięci**. Do TM trafiają wyłącznie segmenty z niepustym Target. Identyczne pary Source/Target dla tej samej pary językowej nie są dodawane ponownie.
+
+## Autosave i współbieżne I/O (v0.5)
+
+Edycja pola **Target** nie wykonuje już synchronicznego zapisu SQLite przy każdym naciśnięciu klawisza. Zamiast tego migawki segmentów trafiają do `SaveQueue` obsługiwanej przez osobny wątek. Szybkie kolejne zmiany tego samego segmentu są scalane po krótkim okresie bezczynności, dzięki czemu do bazy trafia przede wszystkim najnowsza wersja tekstu, a GUI pozostaje responsywne.
+
+Po prawej stronie paska stanu widoczny jest stan autosave: **Autosave: zapisuję… (N)** albo **Autosave: zapisano**. `Ctrl+S` wymusza opróżnienie kolejki i stanowi jawną granicę trwałości. Operacje odczytujące cały projekt (m.in. QA, eksport i synchronizacja TM) również czekają na zapis oczekujących zmian, więc nie pracują na nieaktualnej zawartości SQLite.
+
+Przy zamykaniu projektu `SaveQueue` jest opróżniana przed zamknięciem połączenia z bazą. Jeżeli zapis w tle zakończy się błędem, błąd jest propagowany do GUI zamiast zostać cicho utracony. Import i eksport nadal korzystają z `ThreadPoolExecutor`, natomiast transakcje SQLite są serializowane przez `RLock`.

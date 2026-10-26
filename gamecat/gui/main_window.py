@@ -6,7 +6,7 @@ from typing import Callable, TypeVar
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
-from PySide6.QtWidgets import QFileDialog, QDockWidget, QMainWindow, QMessageBox, QStatusBar
+from PySide6.QtWidgets import QFileDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QStatusBar
 
 from gamecat.gui.csv_import_dialog import CsvImportDialog
 from gamecat.gui.csv_translation_import_dialog import CsvTranslationImportDialog
@@ -60,6 +60,12 @@ class MainWindow(QMainWindow):
         self.segment_editor.segment_modified.connect(self._on_segment_modified)
         self.qa_panel.segment_requested.connect(self._select_qa_segment)
         self.setStatusBar(QStatusBar())
+        self._save_indicator = QLabel('Brak projektu')
+        self.statusBar().addPermanentWidget(self._save_indicator)
+        self._autosave_status_timer = QTimer(self)
+        self._autosave_status_timer.setInterval(150)
+        self._autosave_status_timer.timeout.connect(self._refresh_autosave_status)
+        self._autosave_status_timer.start()
         self._build_actions()
 
     def _build_actions(self) -> None:
@@ -196,6 +202,8 @@ class MainWindow(QMainWindow):
     def save_project(self) -> None:
         if self.project_service is None:
             raise RuntimeError('Project service is unavailable')
+        self.project_service.flush_saves()
+        self._refresh_autosave_status()
         self.statusBar().showMessage('Projekt zapisany', 2500)
 
     def _safe_save(self) -> None:
@@ -208,9 +216,21 @@ class MainWindow(QMainWindow):
         if self.project_service is None or segment.id is None:
             return
         try:
-            self.project_service.save_segment(segment)
+            self.project_service.queue_segment_save(segment)
+            self._refresh_autosave_status()
         except Exception as exc:
+            self._save_indicator.setText('Błąd zapisu')
             self.statusBar().showMessage(f'Błąd zapisu segmentu: {exc}', 5000)
+
+    def _refresh_autosave_status(self) -> None:
+        if self.project_service is None:
+            self._save_indicator.setText('Brak projektu')
+            return
+        pending = self.project_service.pending_save_count
+        if pending:
+            self._save_indicator.setText(f'Autosave: zapisuję… ({pending})')
+        else:
+            self._save_indicator.setText('Autosave: zapisano')
 
     def _glossary_for_current_project(self):
         if self.project_service is None or self.current_project is None:
@@ -452,6 +472,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.project_service is not None:
-            self.project_service.close()
+            try:
+                self.project_service.close()
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    'GameCAT',
+                    f'Nie udało się zapisać wszystkich zmian przed zamknięciem:\n{exc}',
+                )
+                event.ignore()
+                return
             self.project_service = None
         super().closeEvent(event)
