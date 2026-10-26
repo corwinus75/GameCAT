@@ -1,0 +1,4 @@
+source,target,description,case_sensitive
+sword,miecz,Broń biała,false
+sword,ostrze,Broń biała,false
+XP,PD,Punkty doświadczenia,true

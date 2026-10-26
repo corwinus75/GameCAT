@@ -234,6 +234,14 @@ class SegmentEditor(QWidget):
         self.target_edit.setFocus()
         return True
 
+
+    def insert_target_text(self, text: str) -> None:
+        """Insert glossary text at the current Target cursor position."""
+        cursor = self.target_edit.textCursor()
+        cursor.insertText(text)
+        self.target_edit.setTextCursor(cursor)
+        self.target_edit.setFocus()
+
     def next_segment(self) -> None:
         row = self.segment_list.currentRow()
         if row + 1 < self.segment_list.count():

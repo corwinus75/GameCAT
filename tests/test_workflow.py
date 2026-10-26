@@ -65,11 +65,9 @@ def test_service_exposes_project_glossary_for_qa(tmp_path: Path):
     project = service.create_project('Demo', 'en', 'pl', 'txt')
     try:
         service.glossary.create(GlossaryEntry('quest', 'zadanie', project_id=project.id))
-        service.glossary.create(GlossaryEntry('gold', 'złoto', project_id=None))
         entries = service.list_glossary(project.id)
-        assert [(entry.source_term, entry.target_term) for entry in entries] == [
-            ('quest', 'zadanie'),
-            ('gold', 'złoto'),
+        assert [(entry.source_term, entry.targets) for entry in entries] == [
+            ('quest', ['zadanie']),
         ]
     finally:
         service.close()

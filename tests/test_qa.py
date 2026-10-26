@@ -49,3 +49,22 @@ def test_preserves_game_localization_tokens_and_printf_positions():
     issue_codes = codes(validate_segment(source, target))
     assert 'placeholder-missing' not in issue_codes
     assert 'placeholder-extra' not in issue_codes
+
+from gamecat.models.glossary import GlossaryTerm
+
+
+def test_glossary_accepts_any_allowed_variant_and_reports_all_when_missing():
+    glossary=[GlossaryTerm('sword',['miecz','ostrze'])]
+    assert 'glossary-term' not in codes(validate_segment('Take the sword.', 'Weź miecz.', glossary))
+    assert 'glossary-term' not in codes(validate_segment('Take the sword.', 'Weź ostrze.', glossary))
+    issues=validate_segment('Take the sword.', 'Weź broń.', glossary)
+    issue=next(i for i in issues if i.code=='glossary-term')
+    assert 'sword' in issue.message and 'miecz' in issue.message and 'ostrze' in issue.message
+
+
+def test_glossary_whole_word_phrase_and_case_sensitive_matching():
+    glossary=[GlossaryTerm('sword',['miecz']), GlossaryTerm('magic sword',['magiczny miecz']), GlossaryTerm('XP',['PD'],case_sensitive=True)]
+    assert 'glossary-term' not in codes(validate_segment('A swordsman.', 'Szermierz.', glossary))
+    assert 'glossary-term' in codes(validate_segment('A magic sword.', 'Magiczna broń.', glossary))
+    assert 'glossary-term' not in codes(validate_segment('Gain xp.', 'Zyskaj punkty.', glossary))
+    assert 'glossary-term' in codes(validate_segment('Gain XP.', 'Zyskaj pd.', glossary))

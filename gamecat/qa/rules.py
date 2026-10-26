@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from collections import Counter
 from collections.abc import Iterable
 
-from gamecat.models.glossary import GlossaryEntry
+from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 from gamecat.qa.patterns import QAToken, extract_tokens
+from gamecat.glossary.matching import contains_term
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +32,7 @@ def _token_counter(text: str) -> Counter[str]:
     return Counter(_token_signature(token) for token in extract_tokens(text))
 
 
-def run_rules(source: str, target: str, glossary: Iterable[GlossaryEntry] = ()) -> list[QAIssue]:
+def run_rules(source: str, target: str, glossary: Iterable[GlossaryTerm | GlossaryEntry] = ()) -> list[QAIssue]:
     issues: list[QAIssue] = []
     source_tokens = _token_counter(source)
     target_tokens = _token_counter(target)
@@ -53,12 +54,14 @@ def run_rules(source: str, target: str, glossary: Iterable[GlossaryEntry] = ()) 
         issues.append(QAIssue('edge-whitespace', 'Tłumaczenie ma spację na początku lub końcu.'))
     if '  ' in target:
         issues.append(QAIssue('double-space', 'Tłumaczenie zawiera podwójne spacje.'))
+
     for entry in glossary:
-        src = source if entry.case_sensitive else source.casefold()
-        needle = entry.source_term if entry.case_sensitive else entry.source_term.casefold()
-        if needle in src:
-            tgt = target if entry.case_sensitive else target.casefold()
-            required = entry.target_term if entry.case_sensitive else entry.target_term.casefold()
-            if required not in tgt:
-                issues.append(QAIssue('glossary-term', f'Brak wymaganego terminu z glosariusza: {entry.target_term}'))
+        if not contains_term(source, entry.source_term, case_sensitive=entry.case_sensitive):
+            continue
+        targets = entry.targets if isinstance(entry, GlossaryTerm) else [entry.target_term]
+        if not any(contains_term(target, variant, case_sensitive=entry.case_sensitive) for variant in targets):
+            allowed = ', '.join(targets)
+            issues.append(
+                QAIssue('glossary-term', f'Brak wymaganego terminu: {entry.source_term}. Dozwolone: {allowed}')
+            )
     return issues

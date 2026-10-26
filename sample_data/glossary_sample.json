@@ -1,0 +1,14 @@
+[
+  {
+    "source": "sword",
+    "targets": ["miecz", "ostrze"],
+    "description": "Broń biała",
+    "case_sensitive": false
+  },
+  {
+    "source": "XP",
+    "targets": ["PD"],
+    "description": "Punkty doświadczenia",
+    "case_sensitive": true
+  }
+]

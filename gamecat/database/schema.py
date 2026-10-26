@@ -1,5 +1,7 @@
 import sqlite3
 
+from gamecat.database.migrations import migrate_glossary_schema
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,14 +25,6 @@ CREATE TABLE IF NOT EXISTS segments (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_segments_project_position ON segments(project_id, position);
-CREATE TABLE IF NOT EXISTS glossary (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    source_term TEXT NOT NULL,
-    target_term TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    case_sensitive INTEGER NOT NULL DEFAULT 0
-);
 CREATE TABLE IF NOT EXISTS translation_memory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -44,6 +38,7 @@ CREATE TABLE IF NOT EXISTS translation_memory (
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """Create all database objects if they do not yet exist."""
+    """Create database objects and migrate the project glossary to schema 0.7."""
     connection.executescript(_SCHEMA)
+    migrate_glossary_schema(connection)
     connection.commit()

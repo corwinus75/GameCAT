@@ -21,7 +21,7 @@ from gamecat.importers.translation_importer import (
     import_translation_txt,
 )
 from gamecat.models.project import Project
-from gamecat.models.glossary import GlossaryEntry
+from gamecat.models.glossary import GlossaryTerm
 from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.tm.matcher import TMMatch, find_matches
@@ -31,6 +31,9 @@ from gamecat.database.segment_iterator import SegmentBatchIterator
 from gamecat.qa.project_scan import ProjectQAReport, scan_segments
 from gamecat.utils.decorators import measure_time
 from gamecat.workflow.status import ProjectProgress
+from gamecat.services.glossary_service import GlossaryService
+from gamecat.glossary.importers import GlossaryImportResult, import_glossary_csv, import_glossary_json
+from gamecat.glossary.exporters import export_glossary_csv, export_glossary_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,8 +95,55 @@ class ProjectService:
             raise ValueError('project must be persisted before QA')
         return scan_segments(self.iter_segments(project.id), self.list_glossary(project.id))
 
-    def list_glossary(self, project_id: int | None) -> list[GlossaryEntry]:
-        return self.glossary.list_for_project(project_id)
+    def glossary_service(self, project_id: int | None) -> GlossaryService:
+        return GlossaryService(self.glossary, project_id)
+
+    def list_glossary(self, project_id: int | None) -> list[GlossaryTerm]:
+        if project_id is None:
+            return []
+        return self.glossary.list_terms(project_id)
+
+    def create_glossary_term(self, project_id: int | None, term: GlossaryTerm) -> GlossaryTerm:
+        return self.glossary_service(project_id).create_term(term)
+
+    def save_glossary_term(self, project_id: int | None, term: GlossaryTerm) -> GlossaryTerm:
+        return self.glossary_service(project_id).save_term(term)
+
+    def delete_glossary_term(self, project_id: int | None, term_id: int) -> None:
+        self.glossary_service(project_id).delete_term(term_id)
+
+    def add_glossary_variant(self, project_id: int | None, term_id: int, target: str) -> bool:
+        return self.glossary_service(project_id).add_variant(term_id, target)
+
+    def remove_glossary_variant(self, project_id: int | None, term_id: int, target: str) -> None:
+        self.glossary_service(project_id).remove_variant(term_id, target)
+
+    def _import_glossary_file(self, project_id: int, path: Path) -> GlossaryImportResult:
+        suffix = path.suffix.casefold()
+        if suffix == '.csv':
+            return import_glossary_csv(path, self.glossary, project_id)
+        if suffix == '.json':
+            return import_glossary_json(path, self.glossary, project_id)
+        raise ValueError(f'Unsupported glossary format: {suffix}')
+
+    def import_glossary_file_async(self, project_id: int | None, path: Path) -> Future[GlossaryImportResult]:
+        if project_id is None:
+            raise ValueError('project_id is required')
+        return self.io.submit(self._import_glossary_file, project_id, path)
+
+    def _export_glossary_file(self, project_id: int, path: Path) -> int:
+        terms = self.glossary.list_terms(project_id)
+        suffix = path.suffix.casefold()
+        if suffix == '.csv':
+            return export_glossary_csv(path, terms)
+        if suffix == '.json':
+            return export_glossary_json(path, terms)
+        raise ValueError(f'Unsupported glossary format: {suffix}')
+
+    def export_glossary_file_async(self, project_id: int | None, path: Path) -> Future[int]:
+        if project_id is None:
+            raise ValueError('project_id is required')
+        return self.io.submit(self._export_glossary_file, project_id, path)
 
     @measure_time
     def _import_file(

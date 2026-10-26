@@ -2,14 +2,14 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.6.0
+## Funkcje wersji 0.7.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
 - import i eksport TXT/CSV/JSON,
 - workflow statusów `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED` z ręczną i masową zmianą, filtrami, skrótami i licznikiem postępu,
 - QA placeholderów, tagów, spacji i terminologii,
-- glosariusz,
+- projektowy glosariusz z wieloma równorzędnymi wariantami, edycją GUI oraz importem/eksportem CSV+JSON,
 - Translation Memory z fuzzy matching,
 - analiza projektu względem TM (progi 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak) sekwencyjnie, w wątkach lub w procesach, z pretranslacją dopasowań 100%,
 - zadania I/O przez `ThreadPoolExecutor`,
@@ -81,9 +81,9 @@ Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozost
 <!-- BENCHMARK:START -->
 | Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |
 |---|---:|---:|---:|---:|
-| Sekwencyjnie | 3.759 | 3.701 | 3.909 | 1.00x |
-| Wątki | 3.754 | 3.655 | 4.047 | 1.00x |
-| Procesy | 1.796 | 1.745 | 1.942 | 2.09x |
+| Sekwencyjnie | 4.506 | 3.930 | 5.346 | 1.00x |
+| Wątki | 4.463 | 4.015 | 4.960 | 1.01x |
+| Procesy | 3.092 | 2.990 | 3.846 | 1.46x |
 
 Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), seed 2026.  
 Środowisko: Python 3.14.0 (CPython), Windows 11, 22 rdzeni logicznych, GIL włączony.
@@ -93,7 +93,7 @@ Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), 
 
 ## Wnioski z benchmarku GIL
 
-Benchmark mierzy rzeczywistą operację programu – analizę projektu względem TM – w trzech trybach, z przebiegiem rozgrzewkowym, rotowaną kolejnością trybów i medianą z kilku powtórzeń. Fuzzy matching w `gamecat/tm/similarity.py` to obliczenia w czystym Pythonie (tokenizacja, operacje na zbiorach), czyli zadanie CPU-bound. W standardowym CPythonie GIL pozwala w danej chwili wykonywać kod bajtowy tylko jednemu wątkowi, dlatego pula wątków nie skraca czasu analizy – wątki jedynie na zmianę korzystają z jednego „kanału” wykonania, a ich koszt przełączania może wynik minimalnie pogorszyć. Pula procesów uruchamia osobne interpretery z własnym GIL, więc obliczenia rozkładają się na rdzenie CPU. Przyspieszenie procesów jest mniejsze niż liczba rdzeni, ponieważ w czasie pomiaru mieści się start procesów, przekazanie TM do workerów i serializacja wyników (pickle). [Uzupełnij po pomiarze: uzyskane przyspieszenie procesów i wątków z tabeli powyżej oraz liczba rdzeni.] Z tego powodu GameCAT używa procesów do analizy TM, a wątków do zadań I/O – importu, eksportu i autosave – gdzie wątek czeka na dysk, a GIL jest wtedy zwalniany. Dla małych projektów analiza jest wykonywana sekwencyjnie, bo narzut uruchomienia puli przewyższa zysk. Na kompilacji free-threading (Python 3.13t/3.14t) ten sam kod w trybie wątków mógłby skalować się podobnie do procesów, bez kosztu serializacji – to możliwe rozszerzenie pomiarów.
+Benchmark mierzy rzeczywistą operację programu – analizę projektu względem TM – w trzech trybach, z przebiegiem rozgrzewkowym, rotowaną kolejnością trybów i medianą z kilku powtórzeń. Fuzzy matching w `gamecat/tm/similarity.py` to obliczenia w czystym Pythonie (tokenizacja, operacje na zbiorach), czyli zadanie CPU-bound. W standardowym CPythonie GIL pozwala w danej chwili wykonywać kod bajtowy tylko jednemu wątkowi, dlatego pula wątków nie skraca czasu analizy – wątki jedynie na zmianę korzystają z jednego „kanału” wykonania, a ich koszt przełączania może wynik minimalnie pogorszyć. Pula procesów uruchamia osobne interpretery z własnym GIL, więc obliczenia rozkładają się na rdzenie CPU. Przyspieszenie procesów jest mniejsze niż liczba rdzeni, ponieważ w czasie pomiaru mieści się start procesów, przekazanie TM do workerów i serializacja wyników (pickle). W tym pomiarze wątki osiągnęły 1.00x względem wykonania sekwencyjnego, a procesy 2.09x na maszynie z 22 rdzeniami logicznymi. Z tego powodu GameCAT używa procesów do analizy TM, a wątków do zadań I/O – importu, eksportu i autosave – gdzie wątek czeka na dysk, a GIL jest wtedy zwalniany. Dla małych projektów analiza jest wykonywana sekwencyjnie, bo narzut uruchomienia puli przewyższa zysk. Na kompilacji free-threading (Python 3.13t/3.14t) ten sam kod w trybie wątków mógłby skalować się podobnie do procesów, bez kosztu serializacji – to możliwe rozszerzenie pomiarów.
 
 ## Problemy napotkane podczas realizacji
 
@@ -180,3 +180,52 @@ Po prawej stronie paska stanu wyświetlany jest licznik:
 `T: translated-or-better / wszystkie | R: reviewed-or-better / wszystkie | A: approved / wszystkie`
 
 Wskaźniki są kumulacyjne: `REVIEWED` i `APPROVED` liczą się także jako ukończone tłumaczenie, a `APPROVED` jako ukończona recenzja. Po najechaniu na licznik tooltip pokazuje liczby dla czterech statusów rozłącznych.
+
+
+## Glosariusz projektu (v0.7)
+
+Glosariusz jest przypisany wyłącznie do bieżącego projektu. Jeden termin Source może mieć wiele równorzędnych, dopuszczalnych wariantów Target. Panel **Glosariusz** pozwala wyszukiwać terminy, edytować Source, opis i `case_sensitive`, dodawać/usuwać warianty oraz usuwać całe terminy. Dwukrotne kliknięcie wariantu wstawia go do pola Target w miejscu kursora.
+
+Dopasowanie terminologii działa na całych słowach i frazach. Przykładowo `sword` pasuje do `Take the sword.`, ale nie do `swordsman`. Terminy zawierające znaki specjalne, np. `C++` lub `+1 sword`, są traktowane literalnie. Jeżeli `case_sensitive` jest włączone, wielkość liter ma znaczenie zarówno w Source, jak i w dopuszczalnych wariantach Target.
+
+QA uznaje termin za poprawny, jeśli w Target występuje przynajmniej jeden dopuszczalny wariant. Jeśli żaden wariant nie występuje, komunikat zawiera termin Source oraz pełną listę dozwolonych tłumaczeń.
+
+### Import CSV
+
+Kanoniczny format:
+
+```csv
+source,target,description,case_sensitive
+sword,miecz,Broń biała,false
+sword,ostrze,Broń biała,false
+XP,PD,Punkty doświadczenia,true
+```
+
+Każdy wiersz odpowiada jednemu wariantowi. Wymagane są kolumny `source` i `target`; `description` i `case_sensitive` są opcjonalne. Obsługiwane jest UTF-8 i UTF-8-SIG. Puste Source/Target są liczone jako błędne rekordy i pomijane. Import scala istniejące dane bez usuwania wariantów i bez tworzenia duplikatów.
+
+### Import JSON
+
+Kanoniczny format:
+
+```json
+[
+  {
+    "source": "sword",
+    "targets": ["miecz", "ostrze"],
+    "description": "Broń biała",
+    "case_sensitive": false
+  }
+]
+```
+
+`targets` musi być listą niepustych napisów. Import JSON stosuje tę samą politykę scalania co CSV.
+
+Po imporcie pasek stanu raportuje liczbę nowych terminów, nowych wariantów, duplikatów oraz błędnych rekordów. Błąd strukturalny pliku jest wykrywany przed zapisem, więc nie pozostawia częściowo zaimportowanego glosariusza.
+
+### Eksport
+
+CSV zapisuje jeden wariant na wiersz. JSON zapisuje jeden obiekt na termin z tablicą `targets`. Eksport obejmuje tylko glosariusz aktualnego projektu. Przykładowe pliki znajdują się w `sample_data/glossary_sample.csv` i `sample_data/glossary_sample.json`.
+
+### Migracja projektów 0.6
+
+Przy otwarciu starej bazy GameCAT 0.6 płaska tabela glosariusza jest automatycznie migrowana do relacji `glossary_terms` + `glossary_translations`. Warianty tego samego terminu są scalane, duplikaty usuwane, a wpisy globalne z wcześniejszego modelu nie są przypisywane do projektu. Migracja jest idempotentna i wykonywana transakcyjnie.

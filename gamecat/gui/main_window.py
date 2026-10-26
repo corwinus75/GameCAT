@@ -18,6 +18,7 @@ from gamecat.gui.segment_editor import SegmentEditor
 from gamecat.gui.tm_panel import TMPanel
 from gamecat.gui.tm_analysis_dialog import TMAnalysisDialog
 from gamecat.models.project import Project
+from gamecat.models.glossary import GlossaryTerm
 from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.qa.validator import validate_segment
 from gamecat.services.project_service import ProjectService
@@ -57,9 +58,18 @@ class MainWindow(QMainWindow):
         self.tm_panel.target_selected.connect(self.segment_editor.target_edit.setPlainText)
         self.segment_editor.segment_changed.connect(self._update_current_qa)
         self.segment_editor.segment_changed.connect(self._update_current_tm)
+        self.segment_editor.segment_changed.connect(self._update_glossary_context)
         self.segment_editor.segment_modified.connect(self._on_segment_modified)
         self.segment_editor.segments_status_modified.connect(self._on_segments_status_modified)
         self.qa_panel.segment_requested.connect(self._select_qa_segment)
+        self.glossary_panel.term_create_requested.connect(self._safe_create_glossary_term)
+        self.glossary_panel.term_save_requested.connect(self._safe_save_glossary_term)
+        self.glossary_panel.term_delete_requested.connect(self._safe_delete_glossary_term)
+        self.glossary_panel.variant_add_requested.connect(self._safe_add_glossary_variant)
+        self.glossary_panel.variant_delete_requested.connect(self._safe_remove_glossary_variant)
+        self.glossary_panel.import_requested.connect(self._safe_import_glossary)
+        self.glossary_panel.export_requested.connect(self._safe_export_glossary)
+        self.glossary_panel.target_insert_requested.connect(self.segment_editor.insert_target_text)
         self.setStatusBar(QStatusBar())
         self._progress_indicator = QLabel('Postęp: —')
         self._progress_indicator.setToolTip('Postęp tłumaczenia / recenzji / zatwierdzania')
@@ -183,7 +193,7 @@ class MainWindow(QMainWindow):
         self.current_project = persisted
         self.project_path = path
         self.segment_editor.set_segments([])
-        self.glossary_panel.set_entries([])
+        self.glossary_panel.set_terms([])
         self.tm_panel.set_matches([])
         self.qa_panel.set_issues([])
         self.qa_panel.clear_project_report()
@@ -218,7 +228,7 @@ class MainWindow(QMainWindow):
         self._replace_service(service)
         self.current_project = project
         self.project_path = path
-        self.glossary_panel.set_entries(service.list_glossary(project.id))
+        self.glossary_panel.set_terms(service.list_glossary(project.id))
         self.tm_panel.set_matches([])
         self.qa_panel.clear_project_report()
         self.segment_editor.set_segments(segments)
@@ -292,6 +302,120 @@ class MainWindow(QMainWindow):
         self._refresh_progress()
         self.statusBar().showMessage(
             f'Zmieniono status {len(segments)} segmentów.', 3000
+        )
+
+    def _refresh_glossary(self) -> None:
+        if self.project_service is None or self.current_project is None:
+            self.glossary_panel.set_terms([])
+            return
+        self.glossary_panel.set_terms(self.project_service.list_glossary(self.current_project.id))
+        segment = self.segment_editor.current_segment()
+        self.glossary_panel.set_source_context(segment.source if segment else '')
+
+    def _update_glossary_context(self, segment: Segment) -> None:
+        self.glossary_panel.set_source_context(segment.source)
+
+    def _after_glossary_change(self, message: str) -> None:
+        self._refresh_glossary()
+        self.qa_panel.clear_project_report()
+        segment = self.segment_editor.current_segment()
+        if segment is not None:
+            self._update_current_qa(segment)
+        self.statusBar().showMessage(message, 5000)
+
+    def _safe_create_glossary_term(self, term: GlossaryTerm) -> None:
+        try:
+            assert self.project_service is not None and self.current_project is not None
+            self.project_service.create_glossary_term(self.current_project.id, term)
+            self._after_glossary_change('Dodano termin do glosariusza.')
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można dodać terminu:\n{exc}')
+
+    def _safe_save_glossary_term(self, term: GlossaryTerm) -> None:
+        try:
+            assert self.project_service is not None and self.current_project is not None
+            self.project_service.save_glossary_term(self.current_project.id, term)
+            self._after_glossary_change('Zapisano termin glosariusza.')
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można zapisać terminu:\n{exc}')
+
+    def _safe_delete_glossary_term(self, term_id: int) -> None:
+        try:
+            assert self.project_service is not None and self.current_project is not None
+            self.project_service.delete_glossary_term(self.current_project.id, term_id)
+            self._after_glossary_change('Usunięto termin glosariusza.')
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można usunąć terminu:\n{exc}')
+
+    def _safe_add_glossary_variant(self, term_id: int, target: str) -> None:
+        try:
+            assert self.project_service is not None and self.current_project is not None
+            self.project_service.add_glossary_variant(self.current_project.id, term_id, target)
+            self._after_glossary_change('Dodano wariant tłumaczenia.')
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można dodać wariantu:\n{exc}')
+
+    def _safe_remove_glossary_variant(self, term_id: int, target: str) -> None:
+        try:
+            assert self.project_service is not None and self.current_project is not None
+            self.project_service.remove_glossary_variant(self.current_project.id, term_id, target)
+            self._after_glossary_change('Usunięto wariant tłumaczenia.')
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie można usunąć wariantu:\n{exc}')
+            self._refresh_glossary()
+
+    def _safe_import_glossary(self) -> None:
+        try:
+            self.import_glossary()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def import_glossary(self) -> None:
+        assert self.project_service is not None and self.current_project is not None
+        filename, _ = QFileDialog.getOpenFileName(
+            self, 'Importuj glosariusz', filter='Glosariusz (*.csv *.json);;CSV (*.csv);;JSON (*.json)'
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        if path.suffix.casefold() not in {'.csv', '.json'}:
+            QMessageBox.warning(self, 'GameCAT', 'Glosariusz obsługuje tylko CSV i JSON.')
+            return
+        future = self.project_service.import_glossary_file_async(self.current_project.id, path)
+
+        def imported(result) -> None:
+            self._after_glossary_change(
+                f'Import glosariusza: nowe terminy {result.new_terms}, warianty {result.new_variants}, '
+                f'duplikaty {result.duplicates}, błędne rekordy {result.invalid_rows}.'
+            )
+        self._watch_future(future, imported, 'Import glosariusza')
+
+    def _safe_export_glossary(self) -> None:
+        try:
+            self.export_glossary()
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', str(exc))
+
+    @requires_project
+    def export_glossary(self) -> None:
+        assert self.project_service is not None and self.current_project is not None
+        filename, selected_filter = QFileDialog.getSaveFileName(
+            self, 'Eksportuj glosariusz', 'glossary.csv', 'CSV (*.csv);;JSON (*.json)'
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        if not path.suffix:
+            path = path.with_suffix('.json' if selected_filter.startswith('JSON') else '.csv')
+        if path.suffix.casefold() not in {'.csv', '.json'}:
+            QMessageBox.warning(self, 'GameCAT', 'Glosariusz obsługuje tylko CSV i JSON.')
+            return
+        future = self.project_service.export_glossary_file_async(self.current_project.id, path)
+        self._watch_future(
+            future,
+            lambda count: self.statusBar().showMessage(f'Wyeksportowano {count} terminów/wariantów do {path}.', 6000),
+            'Eksport glosariusza',
         )
 
     def _glossary_for_current_project(self):

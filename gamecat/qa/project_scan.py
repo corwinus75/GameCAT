@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Iterable
 
-from gamecat.models.glossary import GlossaryEntry
+from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 from gamecat.models.segment import Segment
 from gamecat.qa.rules import QAIssue
 from gamecat.qa.validator import validate_segment
@@ -35,7 +35,7 @@ class ProjectQAReport:
 
 def scan_segments(
     segments: Iterable[Segment],
-    glossary: Iterable[GlossaryEntry] = (),
+    glossary: Iterable[GlossaryTerm | GlossaryEntry] = (),
 ) -> ProjectQAReport:
     """Run QA for all segments and retain only segments that have issues."""
     segment_list = list(segments)

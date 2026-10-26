@@ -4,7 +4,7 @@ from datetime import datetime
 import sqlite3
 from gamecat.models.project import Project
 from gamecat.models.segment import Segment, SegmentStatus
-from gamecat.models.glossary import GlossaryEntry
+from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.database.segment_iterator import SegmentBatchIterator
 
@@ -126,20 +126,141 @@ class SegmentRepository:
 
 
 class GlossaryRepository:
-    def __init__(self, connection: sqlite3.Connection): self.connection = connection
-    def create(self, entry: GlossaryEntry) -> GlossaryEntry:
+    def __init__(self, connection: sqlite3.Connection):
+        self.connection = connection
+
+    def _term_from_id(self, term_id: int) -> GlossaryTerm:
+        row = self.connection.execute('SELECT * FROM glossary_terms WHERE id=?', (term_id,)).fetchone()
+        if row is None:
+            raise KeyError(term_id)
+        targets = [r['target_term'] for r in self.connection.execute(
+            'SELECT target_term FROM glossary_translations WHERE term_id=? ORDER BY id', (term_id,)
+        ).fetchall()]
+        return GlossaryTerm(row['source_term'], targets, row['description'], bool(row['case_sensitive']), row['id'], row['project_id'])
+
+    def get_term(self, term_id: int) -> GlossaryTerm:
         with self.connection:
-            cur = self.connection.execute('INSERT INTO glossary(project_id,source_term,target_term,description,case_sensitive) VALUES(?,?,?,?,?)',
-                                          (entry.project_id, entry.source_term, entry.target_term, entry.description, int(entry.case_sensitive)))
-        entry.id = cur.lastrowid; return entry
+            return self._term_from_id(term_id)
+
+    def get_by_identity(self, project_id: int, source_term: str, case_sensitive: bool) -> GlossaryTerm | None:
+        source = source_term.strip()
+        with self.connection:
+            row = self.connection.execute(
+                'SELECT id FROM glossary_terms WHERE project_id=? AND source_term=? AND case_sensitive=?',
+                (project_id, source, int(case_sensitive)),
+            ).fetchone()
+            return self._term_from_id(row['id']) if row else None
+
+    def list_terms(self, project_id: int) -> list[GlossaryTerm]:
+        with self.connection:
+            rows = self.connection.execute(
+                'SELECT id FROM glossary_terms WHERE project_id=? ORDER BY source_term COLLATE NOCASE,id',
+                (project_id,),
+            ).fetchall()
+            return [self._term_from_id(r['id']) for r in rows]
+
+    def search_terms(self, project_id: int, query: str) -> list[GlossaryTerm]:
+        needle = query.strip().casefold()
+        terms = self.list_terms(project_id)
+        if not needle:
+            return terms
+        return [t for t in terms if needle in t.source_term.casefold() or any(needle in x.casefold() for x in t.targets)]
+
+    def create_term(self, term: GlossaryTerm) -> GlossaryTerm:
+        if term.project_id is None:
+            raise ValueError('glossary term requires project_id')
+        with self.connection:
+            cur = self.connection.execute(
+                'INSERT INTO glossary_terms(project_id,source_term,description,case_sensitive) VALUES(?,?,?,?)',
+                (term.project_id, term.source_term, term.description, int(term.case_sensitive)),
+            )
+            term.id = int(cur.lastrowid)
+            self.connection.executemany(
+                'INSERT INTO glossary_translations(term_id,target_term) VALUES(?,?)',
+                [(term.id, target) for target in term.targets],
+            )
+        return term
+
+    def update_term_fields(self, term_id: int, source_term: str, description: str, case_sensitive: bool) -> None:
+        with self.connection:
+            self.connection.execute(
+                'UPDATE glossary_terms SET source_term=?,description=?,case_sensitive=? WHERE id=?',
+                (source_term.strip(), description.strip(), int(case_sensitive), term_id),
+            )
+
+    def delete_term(self, term_id: int) -> None:
+        with self.connection:
+            self.connection.execute('DELETE FROM glossary_terms WHERE id=?', (term_id,))
+
+    def add_variant(self, term_id: int, target: str) -> bool:
+        value = target.strip()
+        if not value:
+            raise ValueError('target variant cannot be blank')
+        with self.connection:
+            cur = self.connection.execute(
+                'INSERT OR IGNORE INTO glossary_translations(term_id,target_term) VALUES(?,?)',
+                (term_id, value),
+            )
+        return cur.rowcount > 0
+
+    def remove_variant(self, term_id: int, target: str) -> None:
+        with self.connection:
+            self.connection.execute(
+                'DELETE FROM glossary_translations WHERE term_id=? AND target_term=?', (term_id, target.strip())
+            )
+
+    def merge_terms(self, project_id: int, terms: Iterable[GlossaryTerm]) -> tuple[int, int, int]:
+        new_terms = new_variants = duplicates = 0
+        with self.connection:
+            for incoming in terms:
+                row = self.connection.execute(
+                    'SELECT id FROM glossary_terms WHERE project_id=? AND source_term=? AND case_sensitive=?',
+                    (project_id, incoming.source_term, int(incoming.case_sensitive)),
+                ).fetchone()
+                if row is None:
+                    cur = self.connection.execute(
+                        'INSERT INTO glossary_terms(project_id,source_term,description,case_sensitive) VALUES(?,?,?,?)',
+                        (project_id, incoming.source_term, incoming.description, int(incoming.case_sensitive)),
+                    )
+                    term_id = int(cur.lastrowid); new_terms += 1
+                else:
+                    term_id = int(row['id'])
+                    if incoming.description:
+                        existing = self.connection.execute('SELECT description FROM glossary_terms WHERE id=?',(term_id,)).fetchone()['description']
+                        if not existing:
+                            self.connection.execute('UPDATE glossary_terms SET description=? WHERE id=?',(incoming.description,term_id))
+                for target in incoming.targets:
+                    cur = self.connection.execute(
+                        'INSERT OR IGNORE INTO glossary_translations(term_id,target_term) VALUES(?,?)',
+                        (term_id, target),
+                    )
+                    if cur.rowcount:
+                        new_variants += 1
+                    else:
+                        duplicates += 1
+        return new_terms, new_variants, duplicates
+
+    # 0.6 compatibility path. New code should use list_terms/create_term.
+    def create(self, entry: GlossaryEntry) -> GlossaryEntry:
+        if entry.project_id is None:
+            raise ValueError('global glossary entries are not supported in 0.7')
+        existing = self.get_by_identity(entry.project_id, entry.source_term, entry.case_sensitive)
+        if existing is None:
+            term = self.create_term(GlossaryTerm(entry.source_term, [entry.target_term], entry.description, entry.case_sensitive, project_id=entry.project_id))
+            entry.id = term.id
+        else:
+            self.add_variant(existing.id, entry.target_term)
+            entry.id = existing.id
+        return entry
+
     def list_for_project(self, project_id: int | None) -> list[GlossaryEntry]:
         if project_id is None:
-            with self.connection:
-                rows = self.connection.execute('SELECT * FROM glossary ORDER BY id').fetchall()
-        else:
-            with self.connection:
-                rows = self.connection.execute('SELECT * FROM glossary WHERE project_id=? OR project_id IS NULL ORDER BY id', (project_id,)).fetchall()
-        return [GlossaryEntry(r['source_term'], r['target_term'], r['description'], bool(r['case_sensitive']), r['id'], r['project_id']) for r in rows]
+            return []
+        flat: list[GlossaryEntry] = []
+        for term in self.list_terms(project_id):
+            for target in term.targets:
+                flat.append(GlossaryEntry(term.source_term, target, term.description, term.case_sensitive, term.id, term.project_id))
+        return flat
 
 
 class TranslationMemoryRepository:

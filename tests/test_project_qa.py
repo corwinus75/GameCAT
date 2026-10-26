@@ -27,3 +27,12 @@ def test_scan_segments_empty_project_is_valid():
     assert report.issue_segment_count == 0
     assert report.issue_count == 0
     assert report.results == []
+
+
+def test_project_scan_supports_multi_variant_glossary():
+    from gamecat.models.glossary import GlossaryTerm
+    from gamecat.models.segment import Segment
+    terms=[GlossaryTerm('quest',['zadanie','misja'])]
+    segments=[Segment('Complete the quest.',1,target='To jest misja.')]
+    report=scan_segments(segments,terms)
+    assert not any(i.code=='glossary-term' for r in report.results for i in r.issues)
