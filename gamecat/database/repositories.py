@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from datetime import datetime
 import sqlite3
 from gamecat.models.project import Project
-from gamecat.models.segment import Segment
+from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.models.glossary import GlossaryEntry
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.database.segment_iterator import SegmentBatchIterator
@@ -111,6 +111,18 @@ class SegmentRepository:
         with self.connection:
             row = self.connection.execute('SELECT COUNT(*) FROM segments WHERE project_id=?', (project_id,)).fetchone()
         return int(row[0])
+
+    def status_counts(self, project_id: int) -> dict[SegmentStatus, int]:
+        """Return exclusive workflow status counts for a project."""
+        with self.connection:
+            rows = self.connection.execute(
+                'SELECT status, COUNT(*) AS count FROM segments WHERE project_id=? GROUP BY status',
+                (project_id,),
+            ).fetchall()
+        counts = {status: 0 for status in SegmentStatus}
+        for row in rows:
+            counts[SegmentStatus(row['status'])] = int(row['count'])
+        return counts
 
 
 class GlossaryRepository:

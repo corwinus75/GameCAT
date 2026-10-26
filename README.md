@@ -2,12 +2,12 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 0.5.1
+## Funkcje wersji 0.6.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - SQLite,
 - import i eksport TXT/CSV/JSON,
-- statusy `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED`,
+- workflow statusów `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED` z ręczną i masową zmianą, filtrami, skrótami i licznikiem postępu,
 - QA placeholderów, tagów, spacji i terminologii,
 - glosariusz,
 - Translation Memory z fuzzy matching,
@@ -156,3 +156,27 @@ Edycja pola **Target** nie wykonuje już synchronicznego zapisu SQLite przy każ
 Po prawej stronie paska stanu widoczny jest stan autosave: **Autosave: zapisuję… (N)** albo **Autosave: zapisano**. `Ctrl+S` wymusza opróżnienie kolejki i stanowi jawną granicę trwałości. Operacje odczytujące cały projekt (m.in. QA, eksport i synchronizacja TM) również czekają na zapis oczekujących zmian, więc nie pracują na nieaktualnej zawartości SQLite.
 
 Przy zamykaniu projektu `SaveQueue` jest opróżniana przed zamknięciem połączenia z bazą. Jeżeli zapis w tle zakończy się błędem, błąd jest propagowany do GUI zamiast zostać cicho utracony. Import i eksport nadal korzystają z `ThreadPoolExecutor`, natomiast transakcje SQLite są serializowane przez `RLock`.
+
+
+## Workflow statusów tłumaczenia (v0.6)
+
+Każdy segment ma jeden z czterech statusów: **NEW**, **TRANSLATED**, **REVIEWED** albo **APPROVED**. Status bieżącego segmentu można zmienić z listy **Status segmentu** w edytorze. Menu **Workflow** udostępnia również skróty klawiaturowe:
+
+- `Ctrl+1` → `NEW`,
+- `Ctrl+2` → `TRANSLATED`,
+- `Ctrl+3` → `REVIEWED`,
+- `Ctrl+4` → `APPROVED`.
+
+Lista segmentów pokazuje skrócone oznaczenia `[N]`, `[T]`, `[R]`, `[A]`. Istniejący filtr **Filtr statusu** pozwala wyświetlić tylko segmenty na wybranym etapie pracy. `Ctrl+Enter` potwierdza bieżące tłumaczenie: segment `NEW` przechodzi wtedy do `TRANSLATED`, ale segment oznaczony już jako `REVIEWED` lub `APPROVED` nie jest cofany do wcześniejszego etapu.
+
+### Masowa zmiana statusu
+
+Na liście można zaznaczyć wiele segmentów (`Ctrl`/`Shift`, standardowo jak w Windows), a następnie wybrać status z menu **Workflow** albo użyć `Ctrl+1..4`. Zmiana jest zapisywana do SQLite jedną operacją grupową po wcześniejszym opróżnieniu kolejki autosave, dzięki czemu oczekująca migawka tekstu nie może nadpisać nowszego statusu.
+
+### Postęp projektu
+
+Po prawej stronie paska stanu wyświetlany jest licznik:
+
+`T: translated-or-better / wszystkie | R: reviewed-or-better / wszystkie | A: approved / wszystkie`
+
+Wskaźniki są kumulacyjne: `REVIEWED` i `APPROVED` liczą się także jako ukończone tłumaczenie, a `APPROVED` jako ukończona recenzja. Po najechaniu na licznik tooltip pokazuje liczby dla czterech statusów rozłącznych.

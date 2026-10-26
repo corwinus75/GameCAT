@@ -18,7 +18,7 @@ from gamecat.gui.segment_editor import SegmentEditor
 from gamecat.gui.tm_panel import TMPanel
 from gamecat.gui.tm_analysis_dialog import TMAnalysisDialog
 from gamecat.models.project import Project
-from gamecat.models.segment import Segment
+from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.qa.validator import validate_segment
 from gamecat.services.project_service import ProjectService
 from gamecat.utils.decorators import requires_project
@@ -58,8 +58,12 @@ class MainWindow(QMainWindow):
         self.segment_editor.segment_changed.connect(self._update_current_qa)
         self.segment_editor.segment_changed.connect(self._update_current_tm)
         self.segment_editor.segment_modified.connect(self._on_segment_modified)
+        self.segment_editor.segments_status_modified.connect(self._on_segments_status_modified)
         self.qa_panel.segment_requested.connect(self._select_qa_segment)
         self.setStatusBar(QStatusBar())
+        self._progress_indicator = QLabel('Postęp: —')
+        self._progress_indicator.setToolTip('Postęp tłumaczenia / recenzji / zatwierdzania')
+        self.statusBar().addPermanentWidget(self._progress_indicator)
         self._save_indicator = QLabel('Brak projektu')
         self.statusBar().addPermanentWidget(self._save_indicator)
         self._autosave_status_timer = QTimer(self)
@@ -102,6 +106,23 @@ class MainWindow(QMainWindow):
         self.run_project_qa_action.triggered.connect(self._safe_run_project_qa)
         qa_menu.addAction(self.run_project_qa_action)
 
+        workflow_menu = self.menuBar().addMenu('&Workflow')
+        self.status_actions: list[QAction] = []
+        status_shortcuts = {
+            SegmentStatus.NEW: 'Ctrl+1',
+            SegmentStatus.TRANSLATED: 'Ctrl+2',
+            SegmentStatus.REVIEWED: 'Ctrl+3',
+            SegmentStatus.APPROVED: 'Ctrl+4',
+        }
+        for status in SegmentStatus:
+            action = QAction(f'Ustaw {status.value}', self)
+            action.setShortcut(QKeySequence(status_shortcuts[status]))
+            action.triggered.connect(
+                lambda checked=False, selected=status: self.segment_editor.set_selected_status(selected)
+            )
+            workflow_menu.addAction(action)
+            self.status_actions.append(action)
+
         tm_menu = self.menuBar().addMenu('&TM')
         self.sync_tm_action = QAction('Dodaj tłumaczenia projektu do pamięci', self)
         self.sync_tm_action.triggered.connect(self._safe_sync_tm)
@@ -115,6 +136,8 @@ class MainWindow(QMainWindow):
     def _sync_actions(self) -> None:
         enabled = self.current_project is not None and not self._busy
         for action in (self.import_action, self.import_translation_action, self.export_action, self.save_action, self.run_project_qa_action, self.sync_tm_action, self.analyze_tm_action):
+            action.setEnabled(enabled)
+        for action in self.status_actions:
             action.setEnabled(enabled)
 
     def _replace_service(self, service: ProjectService | None) -> None:
@@ -165,6 +188,7 @@ class MainWindow(QMainWindow):
         self.qa_panel.set_issues([])
         self.qa_panel.clear_project_report()
         self.setWindowTitle(f'GameCAT — {persisted.name}')
+        self._refresh_progress()
         self.statusBar().showMessage(f'Projekt utworzony: {path}', 4000)
         self._sync_actions()
 
@@ -198,6 +222,7 @@ class MainWindow(QMainWindow):
         self.tm_panel.set_matches([])
         self.qa_panel.clear_project_report()
         self.segment_editor.set_segments(segments)
+        self._refresh_progress()
         self.setWindowTitle(f'GameCAT — {project.name}')
         self.statusBar().showMessage(f'Otworzono: {path} ({len(segments)} segmentów)', 4000)
         self._sync_actions()
@@ -234,6 +259,40 @@ class MainWindow(QMainWindow):
             self._save_indicator.setText(f'Autosave: zapisuję… ({pending})')
         else:
             self._save_indicator.setText('Autosave: zapisano')
+
+    def _refresh_progress(self) -> None:
+        progress = self.segment_editor.project_progress()
+        if progress.total == 0:
+            self._progress_indicator.setText('Postęp: 0 segmentów')
+            self._progress_indicator.setToolTip('Projekt nie zawiera segmentów')
+            return
+        self._progress_indicator.setText(
+            f'T: {progress.translated_or_better}/{progress.total} ({progress.translation_percent:.1f}%)  '
+            f'R: {progress.reviewed_or_better}/{progress.total} ({progress.review_percent:.1f}%)  '
+            f'A: {progress.approved}/{progress.total} ({progress.approval_percent:.1f}%)'
+        )
+        self._progress_indicator.setToolTip(
+            f'NEW: {progress.new} | TRANSLATED: {progress.translated} | '
+            f'REVIEWED: {progress.reviewed} | APPROVED: {progress.approved}'
+        )
+
+    def _on_segments_status_modified(self, segments: list[Segment]) -> None:
+        if self.project_service is None or not segments:
+            return
+        groups: dict[SegmentStatus, list[Segment]] = {}
+        for segment in segments:
+            groups.setdefault(segment.status, []).append(segment)
+        try:
+            for status, items in groups.items():
+                self.project_service.set_segment_statuses(items, status)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Błąd zmiany statusu: {exc}', 5000)
+            self._reload_segments()
+            return
+        self._refresh_progress()
+        self.statusBar().showMessage(
+            f'Zmieniono status {len(segments)} segmentów.', 3000
+        )
 
     def _glossary_for_current_project(self):
         if self.project_service is None or self.current_project is None:
@@ -276,6 +335,7 @@ class MainWindow(QMainWindow):
         if self.project_service is None or self.current_project is None:
             return
         self.segment_editor.set_segments(self.project_service.list_segments(self.current_project.id))
+        self._refresh_progress()
         self.qa_panel.clear_project_report()
 
     @requires_project
@@ -383,6 +443,7 @@ class MainWindow(QMainWindow):
             all_segments = self.project_service.list_segments(self.current_project.id)
             self.qa_panel.clear_project_report()
             self.segment_editor.set_segments(all_segments)
+            self._refresh_progress()
             self.statusBar().showMessage(
                 f'Zaimportowano {len(new_segments)} segmentów z {path.name}. Łącznie: {len(all_segments)}.',
                 6000,
@@ -440,6 +501,7 @@ class MainWindow(QMainWindow):
             rows = self.project_service.list_segments(self.current_project.id)
             self.qa_panel.clear_project_report()
             self.segment_editor.set_segments(rows)
+            self._refresh_progress()
             self.statusBar().showMessage(
                 f'Import tłumaczenia: zaktualizowano {result.updated}/{result.total}; '
                 f'niedopasowane: {result.unmatched}.',

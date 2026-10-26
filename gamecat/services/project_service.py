@@ -30,6 +30,7 @@ from gamecat.exceptions import ImportFormatError
 from gamecat.database.segment_iterator import SegmentBatchIterator
 from gamecat.qa.project_scan import ProjectQAReport, scan_segments
 from gamecat.utils.decorators import measure_time
+from gamecat.workflow.status import ProjectProgress
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +147,27 @@ class ProjectService:
         """Persist a segment synchronously while preserving autosave ordering."""
         self.queue_segment_save(segment)
         self.flush_saves()
+
+    def set_segment_statuses(
+        self,
+        segments: Iterable[Segment],
+        status: SegmentStatus | str,
+    ) -> int:
+        """Set one workflow status for many segments without racing queued autosaves."""
+        resolved = status if isinstance(status, SegmentStatus) else SegmentStatus(status)
+        items = list(segments)
+        if not items:
+            return 0
+        self.flush_saves()
+        for segment in items:
+            segment.status = resolved
+        return self.segments.update_many(items)
+
+    def project_progress(self, project_id: int | None) -> ProjectProgress:
+        if project_id is None:
+            return ProjectProgress()
+        self.flush_saves()
+        return ProjectProgress.from_counts(self.segments.status_counts(project_id))
 
     @measure_time
     def _import_translation_file(
