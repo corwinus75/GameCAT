@@ -8,7 +8,7 @@ from typing import Callable, TypeVar
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
-from PySide6.QtWidgets import QFileDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QStatusBar
+from PySide6.QtWidgets import QFileDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QStatusBar, QInputDialog
 
 from gamecat.gui.csv_import_dialog import CsvImportDialog
 from gamecat.gui.format_mapping_dialog import FormatMappingDialog
@@ -309,7 +309,21 @@ class MainWindow(QMainWindow):
             projects = service.list_projects()
             if not projects:
                 raise ValueError('Baza nie zawiera żadnego projektu GameCAT.')
-            project = projects[0]
+            if len(projects) == 1:
+                project = projects[0]
+            else:
+                labels = [
+                    f'{p.name}  [ID: {p.id}]  {p.source_language} → {p.target_language}'
+                    for p in projects
+                ]
+                label, accepted = QInputDialog.getItem(
+                    self, 'Wybierz projekt', 'Projekt w bazie:', labels, 0, False
+                )
+                if not accepted:
+                    service.close()
+                    return
+                project = projects[labels.index(label)]
+            service.select_project(project)
             segments = service.list_segments(project.id)
         except Exception as exc:
             if service is not None:

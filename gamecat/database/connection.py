@@ -56,6 +56,11 @@ class ThreadSafeConnection:
         with self._lock:
             return self._connection.executescript(*args, **kwargs)
 
+    def backup_to(self, destination: Path) -> None:
+        """Create a consistent SQLite backup without releasing the connection lock."""
+        with self._lock, sqlite3.connect(destination) as backup:
+            self._connection.backup(backup)
+
     def commit(self) -> None:
         with self._lock:
             self._connection.commit()

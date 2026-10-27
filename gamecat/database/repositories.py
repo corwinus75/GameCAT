@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections.abc import Iterable
+from functools import wraps
 from datetime import datetime
 import sqlite3
 from gamecat.models.project import Project
@@ -7,6 +8,7 @@ from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.database.segment_iterator import SegmentBatchIterator
+from gamecat.exceptions import DatabaseError
 
 _INSERT_SEGMENT = '''INSERT INTO segments(project_id,position,key,source,target,status,comment,created_at,updated_at,ai_generated)
                 VALUES(?,?,?,?,?,?,?,?,?,?)'''
@@ -28,6 +30,26 @@ def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def database_errors(method):
+    """Convert low-level SQLite failures at repository API boundaries."""
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except sqlite3.Error as exc:
+            raise DatabaseError(f'Database operation {method.__qualname__} failed: {exc}') from exc
+    return wrapped
+
+
+def repository_errors(cls):
+    """Decorate repository methods; preserve domain validation exceptions."""
+    for name, member in vars(cls).items():
+        if name != '__init__' and callable(member):
+            setattr(cls, name, database_errors(member))
+    return cls
+
+
+@repository_errors
 class ProjectRepository:
     def __init__(self, connection: sqlite3.Connection): self.connection = connection
     def create(self, project: Project) -> Project:
@@ -53,6 +75,7 @@ class ProjectRepository:
                                     (project.name, project.source_language, project.target_language, project.source_format, project.updated_at.isoformat(), project.id))
 
 
+@repository_errors
 class SegmentRepository:
     def __init__(self, connection: sqlite3.Connection): self.connection = connection
     def create(self, segment: Segment) -> Segment:
@@ -125,6 +148,7 @@ class SegmentRepository:
         return counts
 
 
+@repository_errors
 class GlossaryRepository:
     def __init__(self, connection: sqlite3.Connection):
         self.connection = connection
@@ -263,13 +287,20 @@ class GlossaryRepository:
         return flat
 
 
+@repository_errors
 class TranslationMemoryRepository:
     def __init__(self, connection: sqlite3.Connection): self.connection = connection
     def create(self, entry: TranslationMemoryEntry) -> TranslationMemoryEntry:
         with self.connection:
-            cur = self.connection.execute('INSERT INTO translation_memory(source,target,source_language,target_language,origin_project,created_at) VALUES(?,?,?,?,?,?)',
+            cur = self.connection.execute('INSERT INTO translation_memory(source,target,source_language,target_language,origin_project,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(source,target,source_language,target_language) DO NOTHING',
                                           (entry.source, entry.target, entry.source_language, entry.target_language, entry.origin_project, entry.created_at.isoformat()))
-        entry.id = cur.lastrowid; return entry
+            if cur.rowcount:
+                entry.id = cur.lastrowid
+            else:
+                row = self.connection.fetchone('SELECT id FROM translation_memory WHERE source=? AND target=? AND source_language=? AND target_language=?',
+                                               (entry.source, entry.target, entry.source_language, entry.target_language))
+                entry.id = row['id']
+        return entry
     def list_all(self) -> list[TranslationMemoryEntry]:
         with self.connection:
             rows = self.connection.fetchall('SELECT * FROM translation_memory ORDER BY id')
@@ -292,12 +323,9 @@ class TranslationMemoryRepository:
     def create_unique_many(self, entries: Iterable[TranslationMemoryEntry]) -> int:
         """Insert distinct bilingual pairs atomically; preserve existing rows."""
         created = 0
-        statement = """INSERT INTO translation_memory
-                    (source,target,source_language,target_language,origin_project,created_at)
-                    SELECT ?,?,?,?,?,? WHERE NOT EXISTS (
-                        SELECT 1 FROM translation_memory
-                        WHERE source=? AND target=? AND source_language=? AND target_language=?
-                    )"""
+        statement = """INSERT OR IGNORE INTO translation_memory
+                       (source,target,source_language,target_language,origin_project,created_at)
+                       VALUES(?,?,?,?,?,?)"""
         with self.connection:
             for entry in entries:
                 if not all(isinstance(value, str) and value.strip() for value in
@@ -306,7 +334,6 @@ class TranslationMemoryRepository:
                 cursor = self.connection.execute(statement, (
                     entry.source, entry.target, entry.source_language, entry.target_language,
                     entry.origin_project, entry.created_at.isoformat(),
-                    entry.source, entry.target, entry.source_language, entry.target_language,
                 ))
                 created += cursor.rowcount
         return created

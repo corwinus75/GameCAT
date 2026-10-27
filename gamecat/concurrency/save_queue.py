@@ -7,6 +7,7 @@ import time
 from collections import OrderedDict
 
 from gamecat.database.repositories import SegmentRepository
+from gamecat.exceptions import DatabaseError
 from gamecat.models.segment import Segment
 from gamecat.utils.decorators import is_transient_sqlite_error, retry
 
@@ -80,7 +81,7 @@ class SaveQueue:
     # Zapis jest idempotentny (UPDATE najnowszej migawki w jednej transakcji),
     # więc można go bezpiecznie ponowić, gdy plik bazy chwilowo blokuje inny
     # proces (np. klient synchronizacji chmury, antywirus, druga instancja).
-    @retry(attempts=3, delay=0.25, exceptions=(sqlite3.OperationalError,), when=is_transient_sqlite_error)
+    @retry(attempts=3, delay=0.25, exceptions=(sqlite3.OperationalError, DatabaseError), when=is_transient_sqlite_error)
     def _save_batch(self, batch: list[Segment]) -> None:
         self.repository.update_many(self._coalesce(batch))
 

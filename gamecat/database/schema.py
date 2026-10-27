@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 _TM_STORAGE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS translation_memory (
@@ -7,7 +8,6 @@ CREATE TABLE IF NOT EXISTS translation_memory (
  source_language TEXT NOT NULL, target_language TEXT NOT NULL,
  origin_project TEXT, created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_tm_languages ON translation_memory(source_language,target_language);
 """
 
 _TM_SETTINGS_SCHEMA = """
@@ -17,9 +17,56 @@ CREATE TABLE IF NOT EXISTS tm_project_settings (
 );
 """
 
+def backup_duplicate_tm(connection, path: Path) -> Path | None:
+    """Back up legacy TM before the first deduplication; never overwrite a backup."""
+    row = connection.fetchone(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='translation_memory'"
+    )
+    if row is None:
+        return None
+    duplicate = connection.fetchone("""
+        SELECT 1 FROM translation_memory
+        GROUP BY source,target,source_language,target_language
+        HAVING COUNT(*) > 1 LIMIT 1
+    """)
+    if duplicate is None:
+        return None
+    backup = Path(str(path) + '.before-v1.0.2.bak')
+    if not backup.exists():
+        try:
+            connection.backup_to(backup)
+        except Exception:
+            backup.unlink(missing_ok=True)
+            raise
+    return backup
+
+
+def migrate_tm_indexes(connection: sqlite3.Connection) -> None:
+    """Remove legacy duplicate bilingual pairs, then enforce fast and unique lookups.
+
+    Keep the lowest ``id`` (the earliest inserted entry) including its origin.
+    The migration is repeatable and runs inside a transaction.
+    """
+    with connection:
+        indexes = {row['name'] for row in connection.fetchall("PRAGMA index_list('translation_memory')")}
+        if 'ux_tm_pair' not in indexes:
+            connection.execute("""DELETE FROM translation_memory WHERE id NOT IN (
+                SELECT MIN(id) FROM translation_memory
+                GROUP BY source, target, source_language, target_language
+            )""")
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS idx_tm_languages '
+            'ON translation_memory(source_language,target_language)'
+        )
+        connection.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS ux_tm_pair '
+            'ON translation_memory(source,target,source_language,target_language)'
+        )
+
+
 def initialize_tm_storage(connection: sqlite3.Connection) -> None:
     connection.executescript(_TM_STORAGE_SCHEMA)
-    connection.commit()
+    migrate_tm_indexes(connection)
 
 
 from gamecat.database.migrations import migrate_glossary_schema
@@ -93,6 +140,7 @@ CREATE TABLE IF NOT EXISTS project_format_profiles (
 def initialize_schema(connection: sqlite3.Connection) -> None:
     """Create database objects and migrate the project glossary to schema 0.7."""
     connection.executescript(_SCHEMA)
+    migrate_tm_indexes(connection)
     migrate_glossary_schema(connection)
     connection.executescript(_TM_SETTINGS_SCHEMA)
     migrate_ai_schema(connection)

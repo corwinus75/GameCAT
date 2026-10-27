@@ -2,7 +2,7 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 1.0.1
+## Funkcje wersji 1.0.2
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
@@ -76,6 +76,17 @@ Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje
 | Testy | `tests/` (pytest) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
 
+
+### Stabilizacja bazy i wielu projektów (1.0.2)
+
+- Gdy jeden plik SQLite zawiera więcej niż jeden projekt, okno otwierania pozwala wybrać konkretny projekt (nazwa, ID, języki).
+- Przypięta zewnętrzna TM ładowana jest **dla wybranego projektu**; błędne powiązanie innego projektu nie blokuje otwarcia poprawnego.
+- Wewnętrzna i zewnętrzna TM otrzymują indeks języków i indeks UNIQUE dla par `(source,target,source_language,target_language)`.
+- Przy migracji istniejących duplikatów zachowujemy wiersz o najniższym `id`; **przed deduplikacją** tworzony jest backup obok pliku `.sqlite.before-v1.0.2.bak`. Backup nie jest nadpisywany.
+- Błędy SQLite zgłaszane przez repozytoria przyjmują postać `DatabaseError` z oryginalnym wyjątkiem w `__cause__`. Ponawianie zapisu przy chwilowej blokadzie nadal działa.
+
+Szczegóły: [notatki wydania 1.0.2](docs/releases/1.0.2.md). Przed aktualizacją zalecane jest niezależne wykonanie kopii baz projektu i zewnętrznych pamięci TM.
+
 ## Stabilizacja 1.0.1
 
 Wydanie poprawkowe zgodne z bazami SQLite 1.0.0 (bez migracji schematu):
@@ -87,6 +98,14 @@ Wydanie poprawkowe zgodne z bazami SQLite 1.0.0 (bez migracji schematu):
 - Dodano testy regresyjne logiki workflow, izolacji odczytów SQLite oraz metod GUI niezależnie od PySide6. Testy integracyjne Qt pozostają przygotowane do uruchomienia na komputerze z PySide6.
 
 Zobacz [notatki wydania 1.0.1](docs/releases/1.0.1.md).
+
+## Wydanie 1.0 — materiały zaliczeniowe
+
+- [Raport projektu](docs/project_report.md) — architektura, wymagania, testy, GIL, ograniczenia.
+- [Plan 10-minutowej obrony](docs/defense_10min.md) — scenariusz demonstracji i pytania.
+- [Testy ręczne GUI](docs/gui_acceptance_checklist.md) — czynności do sprawdzenia na komputerze z PySide6.
+- [Instrukcja przekazania projektu na Moodle](docs/moodle_submission.md) — repozytorium musi zostać opublikowane przez właściciela.
+- [Informacje o wydaniu](docs/releases/1.0.md) — zmiany i znane ograniczenia.
 
 W ramach finalizacji poprawiono również bezpieczeństwo importu już przetłumaczonego pliku: nowy Target unieważnia poprzednie zatwierdzenie (`REVIEWED`/`APPROVED`), natomiast import identycznego tekstu nie odbiera statusu. Klucz OpenAI API nie należy do danych projektu.
 

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from gamecat.concurrency.io_workers import IOWorkerPool
 from gamecat.concurrency.save_queue import SaveQueue
 from gamecat.database.connection import open_database
-from gamecat.database.schema import initialize_schema, initialize_tm_storage
+from gamecat.database.schema import initialize_schema, initialize_tm_storage, backup_duplicate_tm
 from gamecat.database.repositories import GlossaryRepository, ProjectRepository, SegmentRepository, TranslationMemoryRepository
 from gamecat.exporters.txt_exporter import export_txt
 from gamecat.exporters.csv_exporter import export_csv
@@ -60,24 +60,20 @@ class ProjectService:
     ):
         self.database_path = Path(database_path).resolve()
         self.connection = open_database(self.database_path)
-        initialize_schema(self.connection)
+        try:
+            backup_duplicate_tm(self.connection, self.database_path)
+            initialize_schema(self.connection)
+        except BaseException:
+            self.connection.close()
+            raise
         self.projects = ProjectRepository(self.connection)
         self.segments = SegmentRepository(self.connection)
         self.glossary = GlossaryRepository(self.connection)
         self._internal_tm = TranslationMemoryRepository(self.connection)
         self.translation_memory = self._internal_tm
         self._external_tm_connection = None
-        # Most GameCAT databases contain one project; load its persisted TM backend.
-        record = self.connection.fetchone(
-            'SELECT external_path FROM tm_project_settings WHERE external_path IS NOT NULL '
-            'ORDER BY project_id LIMIT 1'
-        )
-        if record is not None:
-            try:
-                self._select_tm_storage(Path(record['external_path']), create_new=False)
-            except BaseException:
-                self.connection.close()
-                raise
+        # Do not select an arbitrary project's external TM on database open.
+        self._active_tm_project_id: int | None = None
         self.io = IOWorkerPool(max_io_workers)
         self.save_queue = SaveQueue(self.segments, autosave_debounce_seconds)
 
@@ -173,7 +169,10 @@ class ProjectService:
             self.segments.update(segment)
 
     def create_project(self, name: str, source_language: str, target_language: str, source_format: str) -> Project:
-        return self.projects.create(Project(name, source_language, target_language, source_format))
+        project = self.projects.create(Project(name, source_language, target_language, source_format))
+        # Newly created projects become the active project in the caller.
+        self.select_project(project)
+        return project
 
     def load_project(self, project_id: int | None) -> Project:
         if project_id is None:
@@ -181,7 +180,37 @@ class ProjectService:
         return self.projects.get(project_id)
 
     def list_projects(self) -> list[Project]:
-        return self.projects.list_all()
+        projects = self.projects.list_all()
+        # Preserve 1.0.1 semantics for files that contain exactly one project.
+        # With several projects, an explicit selection is mandatory.
+        if len(projects) == 1 and self._active_tm_project_id is None:
+            self.select_project(projects[0])
+        return projects
+
+    @property
+    def active_project_id(self) -> int | None:
+        return self._active_tm_project_id
+
+    def select_project(self, project: Project) -> None:
+        """Activate a project's persisted TM without switching on failed opens."""
+        project_id = self._tm_project_id(project)
+        self.projects.get(project_id)  # project must belong to this database
+        if project_id == self._active_tm_project_id:
+            return
+        setting = self._tm_setting(project)
+        external = setting['external_path'] if setting is not None else None
+        if external:
+            self._select_tm_storage(Path(external), create_new=False)
+        else:
+            self.translation_memory = self._internal_tm
+            if self._external_tm_connection is not None:
+                self._external_tm_connection.close()
+                self._external_tm_connection = None
+        self._active_tm_project_id = project_id
+
+    def _ensure_tm_project(self, project: Project) -> None:
+        if self._active_tm_project_id != self._tm_project_id(project):
+            self.select_project(project)
 
     def list_segments(self, project_id: int | None) -> list[Segment]:
         if project_id is None:
@@ -324,21 +353,26 @@ class ProjectService:
         if not items:
             return 0
         self.flush_saves()
+        projects_for_approval = []
+        if resolved is SegmentStatus.APPROVED:
+            for project_id in sorted({item.project_id for item in items if item.project_id is not None}):
+                project = self.load_project(project_id)
+                # Validate all TM connections before changing a persisted status.
+                self._ensure_tm_project(project)
+                projects_for_approval.append(project)
         for segment in items:
             segment.status = resolved
         count = self.segments.update_many(items)
         if resolved is SegmentStatus.APPROVED:
-            project_ids = {item.project_id for item in items if item.project_id is not None}
-            new_entries = []
-            for project_id in project_ids:
-                project = self.load_project(project_id)
-                for item in items:
-                    if item.project_id == project_id and item.target.strip() and item.source.strip():
-                        new_entries.append(TranslationMemoryEntry(
-                            item.source, item.target, project.source_language, project.target_language,
-                            origin_project=project.name,
-                        ))
-            self.translation_memory.create_unique_many(new_entries)
+            for project in projects_for_approval:
+                project_id = project.id
+                self._ensure_tm_project(project)
+                new_entries = [TranslationMemoryEntry(
+                    item.source, item.target, project.source_language, project.target_language,
+                    origin_project=project.name,
+                ) for item in items if item.project_id == project_id
+                    and item.target.strip() and item.source.strip()]
+                self.translation_memory.create_unique_many(new_entries)
         return count
 
     def replace_targets(
@@ -475,6 +509,7 @@ class ProjectService:
     def sync_project_to_tm(self, project: Project) -> int:
         if project.id is None:
             raise ValueError('project must be persisted before TM sync')
+        self._ensure_tm_project(project)
         entries = (
             TranslationMemoryEntry(segment.source, segment.target,
                                    project.source_language, project.target_language,
@@ -491,6 +526,7 @@ class ProjectService:
         limit: int = 5,
         threshold: float | None = None,
     ) -> list[TMMatch]:
+        self._ensure_tm_project(project)
         entries = self.translation_memory.list_for_languages(project.source_language, project.target_language)
         return find_matches(source, entries, limit=limit, threshold=(self.get_tm_threshold(project) if threshold is None else threshold))
 
@@ -505,6 +541,7 @@ class ProjectService:
         """Porównaj wszystkie segmenty projektu z TM tej pary językowej."""
         if project.id is None:
             raise ValueError('project must be persisted before TM analysis')
+        self._ensure_tm_project(project)
         tm = [(e.source, e.target) for e in
               self.translation_memory.list_for_languages(project.source_language, project.target_language)]
         items = ((segment.id, segment.source) for segment in self.iter_segments(project.id)
@@ -599,6 +636,9 @@ class ProjectService:
             )}
             if table_names - {'translation_memory', 'sqlite_sequence'}:
                 raise ValueError('Selected file is not a standalone GameCAT TM store')
+            if not create_new and 'translation_memory' not in table_names:
+                raise ValueError('Linked external TM does not contain TM data')
+            backup_duplicate_tm(candidate, path)
             initialize_tm_storage(candidate)
             replacement = TranslationMemoryRepository(candidate)
         except BaseException:
@@ -613,7 +653,9 @@ class ProjectService:
     def attach_tm_database(self, project: Project, path: Path) -> None:
         path = Path(path).expanduser().resolve()
         # Preserve current storage and preference when selection fails.
+        self.projects.get(self._tm_project_id(project))
         self._select_tm_storage(path)
+        self._active_tm_project_id = project.id
         with self.connection:
             self.connection.execute(
                 'INSERT INTO tm_project_settings(project_id,external_path) VALUES(?,?) '
@@ -622,6 +664,7 @@ class ProjectService:
             )
 
     def use_project_tm_database(self, project: Project) -> None:
+        self.projects.get(self._tm_project_id(project))
         with self.connection:
             self.connection.execute(
                 'INSERT INTO tm_project_settings(project_id,external_path) VALUES(?,NULL) '
@@ -632,14 +675,15 @@ class ProjectService:
         if self._external_tm_connection is not None:
             self._external_tm_connection.close()
             self._external_tm_connection = None
+        self._active_tm_project_id = project.id
 
     def import_tm_file(self, project: Project, path: Path) -> int:
-        self._tm_project_id(project)
+        self._ensure_tm_project(project)
         entries = read_tm(path)  # parse and validate entire file before writes
         return self.translation_memory.create_unique_many(entries)
 
     def export_tm_file(self, project: Project, path: Path) -> int:
-        self._tm_project_id(project)
+        self._ensure_tm_project(project)
         return write_tm(path, self.translation_memory.list_all())
 
     def import_tm_file_async(self, project: Project, path: Path) -> Future[int]:

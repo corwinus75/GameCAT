@@ -135,8 +135,13 @@ def test_missing_linked_tm_is_not_silently_recreated(tmp_path: Path):
     service.attach_tm_database(project, ext)
     service.close()
     ext.unlink()
-    with pytest.raises(FileNotFoundError, match='Linked external TM'):
-        ProjectService(project_file)
+    # Since 1.0.2 TM is loaded only after selecting the project.
+    reopened = ProjectService(project_file)
+    try:
+        with pytest.raises(FileNotFoundError, match='Linked external TM'):
+            reopened.select_project(reopened.projects.list_all()[0])
+    finally:
+        reopened.close()
     assert not ext.exists()
 
 
