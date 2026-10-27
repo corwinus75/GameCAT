@@ -1,1 +1,1 @@
-"""Filtering and safe batch actions for CAT segments."""
+"""Filtrowanie segmentów i bezpieczne operacje wsadowe."""

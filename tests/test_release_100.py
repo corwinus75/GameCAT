@@ -1,4 +1,4 @@
-"""Acceptance checks for the complete offline GameCAT translation workflow."""
+"""Testy akceptacyjne pełnego, offline’owego procesu tłumaczenia w GameCAT."""
 
 from __future__ import annotations
 

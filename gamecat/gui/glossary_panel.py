@@ -1,3 +1,4 @@
+"""Edytor pełnego glosariusza projektu."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -27,7 +28,7 @@ from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 
 
 class GlossaryPanel(QGroupBox):
-    """Project glossary editor. Persistence is delegated through Qt signals."""
+    """Edytor glosariusza projektu; zapis do bazy zleca sygnałami Qt."""
 
     term_create_requested = Signal(object)
     term_save_requested = Signal(object)
@@ -39,6 +40,7 @@ class GlossaryPanel(QGroupBox):
     target_insert_requested = Signal(str)
 
     def __init__(self, parent=None):
+        """Zbuduj tabelę terminów, formularz edycji, listę wariantów i przyciski."""
         super().__init__('Glosariusz', parent)
         self._terms: list[GlossaryTerm] = []
         self._visible: list[GlossaryTerm] = []
@@ -93,11 +95,12 @@ class GlossaryPanel(QGroupBox):
         export_button.clicked.connect(self.export_requested.emit)
 
     def set_terms(self, terms: list[GlossaryTerm]) -> None:
+        """Ustaw terminy glosariusza i odśwież tabelę."""
         self._terms = list(terms)
         self._refilter()
 
     def set_entries(self, entries: list[GlossaryEntry]) -> None:
-        """Compatibility wrapper for 0.6 flat callers until MainWindow is migrated."""
+        """Zgodność z 0.6: zamień płaskie wpisy na terminy z wariantami i wyświetl je."""
         grouped: dict[tuple[str, bool, int | None], list[GlossaryEntry]] = defaultdict(list)
         for entry in entries:
             grouped[(entry.source_term, entry.case_sensitive, entry.id)].append(entry)
@@ -115,10 +118,12 @@ class GlossaryPanel(QGroupBox):
         self.set_terms(terms)
 
     def set_source_context(self, source: str) -> None:
+        """Zapamiętaj bieżący Source, aby wyróżnić występujące w nim terminy."""
         self._source_context = source
         self._refilter()
 
     def _refilter(self) -> None:
+        """Odfiltruj tabelę według wyszukiwanej frazy i pogrub terminy z bieżącego Source."""
         query = self.search_edit.text().strip().casefold()
         self._visible = [
             term for term in self._terms
@@ -137,10 +142,12 @@ class GlossaryPanel(QGroupBox):
             self.table.setItem(row, 0, source_item); self.table.setItem(row, 1, target_item)
 
     def _selected_term(self) -> GlossaryTerm | None:
+        """Zwróć termin zaznaczony w tabeli albo ``None``."""
         row = self.table.currentRow()
         return self._visible[row] if 0 <= row < len(self._visible) else None
 
     def _load_selected(self) -> None:
+        """Wczytaj zaznaczony termin do formularza edycji."""
         term = self._selected_term()
         if term is None:
             return
@@ -151,11 +158,13 @@ class GlossaryPanel(QGroupBox):
         self.variants.clear(); self.variants.addItems(term.targets)
 
     def _new_term(self) -> None:
+        """Wyczyść formularz, aby wprowadzić nowy termin."""
         self._current_id = None
         self.source_edit.clear(); self.description_edit.clear(); self.case_sensitive.setChecked(False); self.variants.clear()
         self.source_edit.setFocus()
 
     def _draft(self) -> GlossaryTerm | None:
+        """Zbuduj termin z formularza; przy brakach pokaż ostrzeżenie i zwróć ``None``."""
         source = self.source_edit.text().strip()
         targets = [self.variants.item(i).text().strip() for i in range(self.variants.count()) if self.variants.item(i).text().strip()]
         if not source or not targets:
@@ -168,6 +177,7 @@ class GlossaryPanel(QGroupBox):
         )
 
     def _save_current(self) -> None:
+        """Zgłoś utworzenie nowego albo zapis istniejącego terminu."""
         term = self._draft()
         if term is None:
             return
@@ -177,10 +187,12 @@ class GlossaryPanel(QGroupBox):
             self.term_save_requested.emit(term)
 
     def _delete_current(self) -> None:
+        """Zgłoś usunięcie bieżącego terminu."""
         if self._current_id is not None:
             self.term_delete_requested.emit(self._current_id)
 
     def _add_variant_local(self) -> None:
+        """Dodaj wariant do listy i – dla zapisanego terminu – zgłoś jego zapis."""
         from PySide6.QtWidgets import QInputDialog
         value, ok = QInputDialog.getText(self, 'Dodaj wariant', 'Target:')
         value = value.strip()
@@ -194,6 +206,7 @@ class GlossaryPanel(QGroupBox):
             self.variant_add_requested.emit(self._current_id, value)
 
     def _remove_variant_local(self) -> None:
+        """Usuń zaznaczony wariant z listy i – dla zapisanego terminu – zgłoś usunięcie."""
         item = self.variants.currentItem()
         if item is None:
             return
@@ -206,6 +219,7 @@ class GlossaryPanel(QGroupBox):
             self.variant_delete_requested.emit(self._current_id, value)
 
     def _emit_selected_variant(self) -> None:
+        """Zgłoś wstawienie zaznaczonego wariantu do Target."""
         item = self.variants.currentItem()
         if item is not None:
             self.target_insert_requested.emit(item.text())

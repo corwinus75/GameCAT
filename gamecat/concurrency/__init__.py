@@ -1,1 +1,1 @@
-"""Background I/O and synchronization helpers."""
+"""Współbieżność: pula wątków I/O i kolejka zapisów w tle."""

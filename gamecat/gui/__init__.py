@@ -1,1 +1,1 @@
-"""PySide6 desktop interface."""
+"""Interfejs graficzny GameCAT (PySide6)."""

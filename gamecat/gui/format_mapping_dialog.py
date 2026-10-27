@@ -1,4 +1,4 @@
-"""Declarative mapping editor for GameCAT localization formats."""
+"""Edytor deklaratywnego mapowania pól dla formatów lokalizacyjnych."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,9 +11,10 @@ from gamecat.localization.profiles import FormatProfile
 
 
 class FormatMappingDialog(QDialog):
-    """Mapping fields; JSON legacy mode preserves pre-0.11 import behavior."""
+    """Okno mapowania pól; tryb zgodności JSON zachowuje import sprzed wersji 0.11."""
 
     def __init__(self, path: Path, existing: FormatProfile | None = None, parent=None):
+        """Zbuduj formularz pól profilu, wypełniając go istniejącym profilem formatu."""
         super().__init__(parent)
         fmt = path.suffix.lower().lstrip('.')
         self.format = fmt
@@ -58,12 +59,14 @@ class FormatMappingDialog(QDialog):
         layout.addRow(buttons)
         self._toggle()
 
-    def _toggle(self, *_):
+    def _toggle(self, *_: object) -> None:
+        """Wyłącz pola mapowania, gdy wybrano prosty (dawny) tryb JSON."""
         enabled = not (self.format == 'json' and self.legacy.isChecked())
         for field in self._fields:
             field.setEnabled(enabled)
 
     def selected_profile(self) -> FormatProfile | None:
+        """Zwróć profil z formularza albo ``None`` dla dawnego trybu JSON."""
         if self.format == 'json' and self.legacy.isChecked():
             return None
         return FormatProfile(

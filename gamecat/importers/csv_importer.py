@@ -1,4 +1,4 @@
-"""CSV source importer supporting commas, semicolons, tabs and pipes."""
+"""Importer źródeł CSV obsługujący separatory: przecinek, średnik, tabulator i pionową kreskę."""
 import csv
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,6 +11,13 @@ def import_csv(path: Path, key_column: str | None, source_column: str, target_co
                comment_column: str | None = None) -> Iterator[ImportedSegment]:
     # Validate once before inserting anything: import_file batches writes in a
     # transaction, so any malformed later record causes rollback.
+    """Generator segmentów z pliku CSV według wybranych kolumn.
+
+    Nagłówki są sprawdzane przed zwróceniem pierwszego segmentu; wiersz
+    z nieprawidłową liczbą kolumn przerywa import (cała transakcja jest cofana).
+
+    :raises ValueError: brak wskazanej kolumny lub uszkodzony rekord.
+    """
     fields = read_csv_headers(path)
     required = ([key_column] if key_column else []) + [source_column] + ([target_column] if target_column else []) + ([comment_column] if comment_column else [])
     for name in required:

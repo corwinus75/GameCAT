@@ -1,14 +1,16 @@
+"""Model projektu tłumaczeniowego."""
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
 def _now() -> datetime:
+    """Zwróć bieżący czas UTC (domyślna wartość pól dat)."""
     return datetime.now(timezone.utc)
 
 
 @dataclass(slots=True)
 class Project:
-    """Translation project metadata."""
+    """Metadane projektu: nazwa, para językowa i format źródłowy."""
     name: str
     source_language: str
     target_language: str

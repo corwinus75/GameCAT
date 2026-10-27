@@ -1,4 +1,4 @@
-"""Pure, Qt-free search, sorting and preflight batch-replacement operations."""
+"""Czyste (bez Qt) wyszukiwanie, sortowanie i podgląd masowej zamiany Target."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,6 +10,7 @@ from gamecat.models.segment import Segment, SegmentStatus
 
 @dataclass(frozen=True, slots=True)
 class SearchQuery:
+    """Parametry wyszukiwania: fraza, zakres, regex, filtry statusu i jakości oraz sortowanie."""
     phrase: str = ''
     scope: str = 'both'  # both, source, target
     regex: bool = False
@@ -22,6 +23,7 @@ class SearchQuery:
 
 @dataclass(frozen=True, slots=True)
 class TargetReplacement:
+    """Proponowana zmiana Target jednego segmentu wraz z liczbą zamienionych wystąpień."""
     segment_id: int
     source: str
     original: str
@@ -30,6 +32,10 @@ class TargetReplacement:
 
 
 def _regex(text: str, regex: bool, case_sensitive: bool) -> re.Pattern[str]:
+    """Skompiluj wzorzec wyszukiwania (dosłowny tekst jest escapowany).
+
+    :raises ValueError: nieprawidłowe wyrażenie regularne.
+    """
     try:
         return re.compile(text if regex else re.escape(text), 0 if case_sensitive else re.IGNORECASE)
     except re.error as exc:
@@ -43,6 +49,10 @@ def filter_segments(
     qa_error_ids: Collection[int] = (),
     tm_match_ids: Collection[int] = (),
 ) -> list[Segment]:
+    """Zwróć segmenty spełniające kryteria zapytania, posortowane zgodnie z nim.
+
+    :raises ValueError: nieprawidłowy zakres, sortowanie, filtr lub regex.
+    """
     if query.scope not in {'both', 'source', 'target'}:
         raise ValueError('Invalid search scope')
     if query.sort not in {'position', 'source', 'status'}:
@@ -86,7 +96,13 @@ def preview_replacements(
     regex: bool = False, case_sensitive: bool = False,
     include_reviewed: bool = False,
 ) -> list[TargetReplacement]:
-    """Prepare a non-mutating preview; never alter source or protected statuses implicitly."""
+    """Przygotuj podgląd zamiany w Target bez modyfikowania segmentów.
+
+    Segmenty ``REVIEWED``/``APPROVED`` są pomijane, chyba że ``include_reviewed``.
+    Source nigdy nie jest zmieniany.
+
+    :raises ValueError: pusta fraza lub błędne wyrażenie zamiany.
+    """
     if not find:
         raise ValueError('Search text cannot be empty for replacement')
     pattern = _regex(find, regex, case_sensitive)

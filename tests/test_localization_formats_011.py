@@ -1,6 +1,5 @@
 """v0.11 localization exchange: test preservation and safe mapping."""
 import json
-from pathlib import Path
 import xml.etree.ElementTree as ET
 import pytest
 
@@ -57,7 +56,7 @@ def test_xml_profile_keeps_attributes_and_other_tags(tmp_path):
 
 def test_tsv_utf8_and_quoted_multiline_fields(tmp_path):
     file = tmp_path / 'source.tsv'
-    file.write_text('id\tsource\ttarget\n1\t"Hello\nfriend"\t"Witaj\nprzyjacielu"\n', encoding='utf-8-sig')
+    file.write_text('id\tsource\ttarget\n1\t"Hello\nfriend"\t"Witaj\nprzyjacielu"\n', encoding='utf-8-sig', newline='')
     profile = FormatProfile('tsv', key_field='id')
     source = list(read_source(file, profile))
     assert (source[0].source, source[0].target) == ('Hello\nfriend', 'Witaj\nprzyjacielu')

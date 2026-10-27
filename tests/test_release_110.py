@@ -1,4 +1,4 @@
-"""Regression tests for project context, streamed QA/export and cached TM."""
+"""Testy regresyjne kontekstu projektu, strumieniowego QA/eksportu i cache TM."""
 from __future__ import annotations
 
 import json
@@ -93,10 +93,8 @@ def test_quality_context_uses_current_segments_and_tm(tmp_path: Path):
 
 def _controller(name: str, scope: dict):
     import ast
-    path = Path(__file__).resolve().parents[1] / 'gamecat/gui/main_window.py'
-    tree = ast.parse(path.read_text(encoding='utf-8'))
-    cls = next(x for x in tree.body if isinstance(x, ast.ClassDef) and x.name == 'MainWindow')
-    function = next(x for x in cls.body if isinstance(x, ast.FunctionDef) and x.name == name)
+    from gui_source import find_method
+    function, path = find_method(name)
     function.decorator_list = []
     exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), str(path), 'exec'), scope)
     return scope[name]
@@ -118,7 +116,6 @@ class _QueuedTimer:
 def test_async_tm_does_not_publish_stale_segment_results():
     from concurrent.futures import Future
     from types import SimpleNamespace
-    from gamecat.tm.matcher import TMMatch
 
     _QueuedTimer.calls = []
     first, second = Future(), Future()

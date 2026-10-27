@@ -1,3 +1,4 @@
+"""Importery samych tłumaczeń (Target) dopasowywanych do segmentów po kluczu lub pozycji."""
 from __future__ import annotations
 
 import csv
@@ -11,12 +12,14 @@ from gamecat.importers.csv_format import detect_csv_delimiter, read_csv_headers
 
 @dataclass(frozen=True, slots=True)
 class ImportedTranslation:
+    """Tłumaczenie odczytane z pliku wraz z kluczem albo pozycją do dopasowania."""
     target: str
     key: str | None = None
     position: int | None = None
 
 
 def import_translation_txt(path: Path) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z TXT – linia N odpowiada segmentowi na pozycji N."""
     with path.open('r', encoding='utf-8') as handle:
         for position, line in enumerate(handle, 1):
             yield ImportedTranslation(target=line.rstrip('\r\n'), position=position)
@@ -27,6 +30,10 @@ def import_translation_csv(
     key_column: str | None,
     target_column: str,
 ) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z CSV (kolumna Target i opcjonalna kolumna klucza).
+
+    :raises ValueError: brak kolumny lub uszkodzony rekord.
+    """
     fields = read_csv_headers(path)
     with path.open('r', encoding='utf-8-sig', newline='') as handle:
         reader = csv.DictReader(handle, delimiter=detect_csv_delimiter(path))
@@ -46,6 +53,10 @@ def import_translation_csv(
 
 
 def import_translation_json(path: Path) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z JSON: słownika ``klucz: target`` albo listy napisów/obiektów.
+
+    :raises ValueError: nieobsługiwana struktura lub nieprawidłowa pozycja.
+    """
     with path.open('r', encoding='utf-8-sig') as handle:
         data = json.load(handle)
 

@@ -1,1 +1,1 @@
-"""Advanced Python utilities."""
+"""Narzędzia pomocnicze, w tym własne dekoratory."""

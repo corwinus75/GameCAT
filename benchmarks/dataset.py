@@ -23,10 +23,12 @@ SWAPS = {'old': 'ancient', 'rusty': 'broken', 'dark': 'gloomy', 'near': 'beside'
 
 
 def _sentence(rng: random.Random) -> str:
+    """Wygeneruj losowe zdanie z ustalonego słownika (deterministycznie dla danego ziarna)."""
     return f'{rng.choice(SUBJECTS)} {rng.choice(VERBS)} {rng.choice(OBJECTS)}{rng.choice(TAILS)}.'
 
 
 def _mutate(sentence: str, rng: random.Random) -> str:
+    """Zmień losowo kilka słów zdania, aby uzyskać dopasowanie fuzzy zamiast dokładnego."""
     words = sentence.split()
     candidates = [i for i, w in enumerate(words) if w.strip('.') in SWAPS]
     if not candidates:

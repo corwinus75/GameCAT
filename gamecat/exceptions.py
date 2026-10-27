@@ -1,17 +1,18 @@
+"""Wyjątki aplikacji – kontrolowane błędy zgłaszane użytkownikowi."""
 class GameCATError(Exception):
-    """Base class for controlled application errors."""
+    """Klasa bazowa kontrolowanych błędów aplikacji."""
 
 
 class ImportFormatError(GameCATError):
-    """Raised when an import file cannot be parsed or decoded."""
+    """Plik importu nie daje się zdekodować ani sparsować."""
 
 
 class DatabaseError(GameCATError):
-    """Raised when a database operation fails."""
+    """Operacja na bazie SQLite nie powiodła się (oryginał w ``__cause__``)."""
 
 
 class NoProjectError(GameCATError, RuntimeError):
-    """Raised when an operation requires an open project.
+    """Operacja wymaga otwartego projektu.
 
     Dziedziczy także po ``RuntimeError`` dla zgodności z wcześniejszym API.
     """

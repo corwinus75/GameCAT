@@ -1,6 +1,5 @@
 from pathlib import Path
 import logging
-import pytest
 from gamecat.exceptions import GameCATError, ImportFormatError, DatabaseError
 from gamecat.logging_config import configure_logging
 

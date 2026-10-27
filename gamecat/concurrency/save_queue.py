@@ -1,3 +1,9 @@
+"""Kolejka zapisów segmentów wykonywanych w wątku tła (producent–konsument).
+
+GUI i operacje wsadowe tylko dodają migawki segmentów do ``queue.Queue``;
+osobny wątek scala szybkie zmiany tego samego segmentu i zapisuje je do
+SQLite jedną transakcją.
+"""
 from __future__ import annotations
 
 import queue
@@ -15,14 +21,20 @@ _SENTINEL = object()
 
 
 class SaveQueue:
-    """Serialize and coalesce segment writes in a background worker.
+    """Serializuje i scala zapisy segmentów w wątku roboczym.
 
-    Rapid edits of the same segment are reduced to the newest snapshot after a
-    short idle window. ``flush()`` is the durability boundary used by manual
-    save, export/QA operations and project shutdown.
+    Szybkie zmiany tego samego segmentu są redukowane do najnowszej migawki
+    po krótkim oknie bezczynności (debounce). ``flush()`` wyznacza granicę
+    trwałości – używają jej jawny zapis, eksport, QA i zamknięcie projektu.
     """
 
     def __init__(self, repository: SegmentRepository, debounce_seconds: float = 0.20):
+        """Uruchom wątek zapisujący dla repozytorium segmentów.
+
+        :param repository: repozytorium wykonujące zapis wsadowy.
+        :param debounce_seconds: okno scalania zmian (0 – zapis natychmiastowy).
+        :raises ValueError: gdy okno jest ujemne.
+        """
         if debounce_seconds < 0:
             raise ValueError('debounce_seconds must be non-negative')
         self.repository = repository
@@ -37,6 +49,7 @@ class SaveQueue:
 
     @staticmethod
     def _snapshot(segment: Segment) -> Segment:
+        """Zwróć niezależną kopię segmentu, aby GUI mogło dalej modyfikować oryginał."""
         return Segment(
             segment.source,
             segment.position,
@@ -53,10 +66,15 @@ class SaveQueue:
 
     @property
     def pending_count(self) -> int:
+        """Liczba migawek oczekujących na zapis (odczyt chroniony blokadą)."""
         with self._state_lock:
             return self._pending_count
 
     def enqueue(self, segment: Segment) -> None:
+        """Dodaj migawkę segmentu do kolejki zapisów.
+
+        :raises RuntimeError: kolejka zamknięta lub wcześniejszy zapis w tle się nie powiódł.
+        """
         if self._closed:
             raise RuntimeError('SaveQueue is closed')
         with self._state_lock:
@@ -66,6 +84,7 @@ class SaveQueue:
         self._queue.put(self._snapshot(segment))
 
     def _mark_done(self, count: int) -> None:
+        """Zmniejsz licznik oczekujących zapisów o *count*."""
         with self._state_lock:
             self._pending_count -= count
 
@@ -83,9 +102,18 @@ class SaveQueue:
     # proces (np. klient synchronizacji chmury, antywirus, druga instancja).
     @retry(attempts=3, delay=0.25, exceptions=(sqlite3.OperationalError, DatabaseError), when=is_transient_sqlite_error)
     def _save_batch(self, batch: list[Segment]) -> None:
+        """Zapisz scaloną partię jedną transakcją.
+
+        Dekorator ``retry`` ponawia zapis, gdy plik bazy chwilowo blokuje inny proces.
+        """
         self.repository.update_many(self._coalesce(batch))
 
     def _worker(self) -> None:
+        """Pętla wątku zapisującego: pobiera migawki, scala je w oknie debounce i zapisuje.
+
+        Kończy pracę po odebraniu wartownika (``_SENTINEL``). Błąd zapisu jest
+        zapamiętywany i zgłaszany przy kolejnym ``enqueue`` lub ``flush``.
+        """
         while True:
             item = self._queue.get()
             if item is _SENTINEL:
@@ -130,6 +158,10 @@ class SaveQueue:
                 return
 
     def flush(self) -> None:
+        """Poczekaj, aż wszystkie zakolejkowane migawki trafią do bazy.
+
+        :raises RuntimeError: gdy zapis w tle zakończył się błędem.
+        """
         self._queue.join()
         with self._state_lock:
             error = self._error
@@ -137,6 +169,7 @@ class SaveQueue:
             raise RuntimeError('Background save failed') from error
 
     def close(self) -> None:
+        """Opróżnij kolejkę, zatrzymaj wątek wartownikiem i poczekaj na jego koniec."""
         if self._closed:
             return
         self.flush()

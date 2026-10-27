@@ -1,1 +1,1 @@
-"""Translation quality assurance."""
+"""Kontrola jakości tłumaczeń (QA)."""

@@ -1,14 +1,15 @@
+"""Wyszukiwanie terminów glosariusza w tekście."""
 from __future__ import annotations
 
 import re
 
 
 def contains_term(text: str, term: str, *, case_sensitive: bool = False) -> bool:
-    """Return whether *term* occurs as a complete literal word/phrase in *text*.
+    """Sprawdź, czy *term* występuje w *text* jako pełne słowo lub fraza.
 
-    Regex boundaries are applied only when the corresponding edge of the term
-    is word-like, so punctuation-heavy localization terms such as ``C++`` and
-    ``+1 sword`` remain matchable.
+    Granice słowa (regex) są stosowane tylko przy krawędziach terminu
+    złożonych ze znaków słownych, dzięki czemu terminy z interpunkcją, np.
+    ``C++`` lub ``+1 sword``, nadal są wykrywane.
     """
     needle = term.strip()
     if not needle:

@@ -1,7 +1,7 @@
-"""Exercise selected GUI controller methods without requiring Qt bindings.
+"""Testy wybranych metod kontrolera okna głównego bez bibliotek Qt.
 
-These tests execute the actual method bodies extracted via AST with fake widget
-adapters. Full widget/signal coverage remains in test_patch_101_gui.py.
+Rzeczywiste ciała metod są wyciągane przez AST i wykonywane z atrapami
+widżetów. Pełne pokrycie widżetów i sygnałów zapewnia test_patch_101_gui.py.
 """
 from __future__ import annotations
 
@@ -14,10 +14,8 @@ from gamecat.services.project_service import ProjectService
 
 
 def gui_method(name: str, scope: dict | None = None):
-    path = Path(__file__).resolve().parents[1] / 'gamecat/gui/main_window.py'
-    root = ast.parse(path.read_text(encoding='utf-8'))
-    main_window = next(node for node in root.body if isinstance(node, ast.ClassDef) and node.name == 'MainWindow')
-    function = next(node for node in main_window.body if isinstance(node, ast.FunctionDef) and node.name == name)
+    from gui_source import find_method
+    function, path = find_method(name)
     function.decorator_list = []
     scope = dict(scope or {})
     exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), str(path), 'exec'), scope)

@@ -1,15 +1,15 @@
-"""Text formatting for contextual TM suggestions (independent of Qt)."""
+"""Formatowanie tekstu sugestii TM do wyświetlenia (niezależne od Qt)."""
 from __future__ import annotations
 
 from gamecat.tm.matcher import TMMatch
 
 
 def display_tm_match(match: TMMatch) -> tuple[str, str]:
-    """Return (list label, tooltip) without treating TM IDs as segment IDs.
+    """Zwróć (etykietę wiersza, podpowiedź) bez utożsamiania ID wpisu TM z ID segmentu.
 
-    A TM pair may be shared by multiple project segments. Show up to three
-    references in the row and all of them in the tooltip. External entries may
-    have no corresponding segment in the currently opened project.
+    Para z TM może być używana przez wiele segmentów projektu: wiersz pokazuje
+    do trzech odwołań, podpowiedź – wszystkie. Wpisy zewnętrzne mogą nie mieć
+    odpowiednika w otwartym projekcie.
     """
     refs = match.segment_references
     ref_labels = [f'{ref.id} (poz. {ref.position})' for ref in refs]

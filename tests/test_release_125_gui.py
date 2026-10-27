@@ -1,4 +1,4 @@
-"""UI mapping checks: run with PySide6 when available."""
+"""Testy okna mapowania CSV; uruchamiane, gdy dostępny jest PySide6."""
 import os
 from pathlib import Path
 

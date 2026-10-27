@@ -1,10 +1,11 @@
+"""Model wpisu pamięci tłumaczeniowej (TM)."""
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
 @dataclass(slots=True)
 class TranslationMemoryEntry:
-    """A reusable bilingual translation pair."""
+    """Para dwujęzyczna Source/Target wielokrotnego użytku wraz z parą języków."""
     source: str
     target: str
     source_language: str

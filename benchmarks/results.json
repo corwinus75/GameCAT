@@ -3,65 +3,45 @@
     "python": "3.14.0",
     "implementation": "CPython",
     "system": "Windows 11",
-    "processor": "Intel64 Family 6 Model 170 Stepping 4, GenuineIntel",
+    "processor": null,
     "cpu_count": 22,
     "free_threading_build": false,
     "gil_enabled": true,
     "switch_interval_s": 0.005
   },
   "parameters": {
-    "segments": 800,
-    "tm_entries": 1600,
+    "segments": 600,
+    "tm_entries": 1200,
     "repeats": 5,
     "workers": 22,
     "seed": 2026,
-    "similarity_calls_upper_bound": 1280000
+    "similarity_calls_upper_bound": 720000
   },
   "results": [
     {
       "mode": "sequential",
       "label": "Sekwencyjnie",
-      "median_s": 6.99878660000104,
-      "min_s": 6.824959699999454,
-      "max_s": 7.19877169999927,
-      "speedup": 1.0,
-      "times_s": [
-        7.0057661999999254,
-        6.824959699999454,
-        7.19877169999927,
-        6.99878660000104,
-        6.832234700001209
-      ]
+      "median_s": 3.759,
+      "min_s": 3.701,
+      "max_s": 3.909,
+      "speedup": 1.0
     },
     {
       "mode": "threads",
       "label": "Wątki",
-      "median_s": 6.957947599999898,
-      "min_s": 6.889463100000285,
-      "max_s": 7.115325500000836,
-      "speedup": 1.0058694032132611,
-      "times_s": [
-        6.889463100000285,
-        6.957947599999898,
-        7.115325500000836,
-        6.95190410000032,
-        7.051279799999975
-      ]
+      "median_s": 3.754,
+      "min_s": 3.655,
+      "max_s": 4.047,
+      "speedup": 1.0013319126265317
     },
     {
       "mode": "processes",
       "label": "Procesy",
-      "median_s": 2.3167966999990313,
-      "min_s": 2.2773029999989376,
-      "max_s": 2.490312300000369,
-      "speedup": 3.0208894030296083,
-      "times_s": [
-        2.3167966999990313,
-        2.3481145999994624,
-        2.2773029999989376,
-        2.2864676999997755,
-        2.490312300000369
-      ]
+      "median_s": 1.796,
+      "min_s": 1.745,
+      "max_s": 1.942,
+      "speedup": 2.0929844097995542
     }
-  ]
+  ],
+  "note": "Pomiar wykonany na komputerze autora (Windows 11, 22 rdzenie logiczne). Pojedyncze czasy rund nie zostały zapisane – podano medianę, minimum i maksimum z 5 rund."
 }

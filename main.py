@@ -1,3 +1,4 @@
+"""Punkt wejścia aplikacji GameCAT: konfiguruje logowanie i uruchamia okno główne."""
 import multiprocessing
 import sys
 
@@ -8,6 +9,7 @@ from gamecat.logging_config import configure_logging
 
 
 def main() -> int:
+    """Uruchom aplikację Qt z oknem głównym i zwróć kod wyjścia pętli zdarzeń."""
     configure_logging()
     app = QApplication(sys.argv)
     window = MainWindow(); window.show()

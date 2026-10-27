@@ -1,4 +1,4 @@
-"""Credentials are kept in OS keyring, transient memory or environment, NEVER project SQLite."""
+"""Przechowywanie klucza OpenAI: systemowy keyring, sesja lub zmienna środowiskowa – nigdy SQLite projektu."""
 from __future__ import annotations
 
 import os
@@ -11,10 +11,16 @@ _ACCOUNT = 'default'
 
 
 class CredentialStore:
+    """Dostęp do klucza OpenAI API w systemowym magazynie poświadczeń."""
     def __init__(self, keyring_module: Any | None = None):
+        """Opcjonalnie wstrzyknij moduł zgodny z ``keyring`` (używane w testach)."""
         self._keyring = keyring_module
 
-    def _backend(self):
+    def _backend(self) -> Any:
+        """Zwróć moduł keyring (wstrzyknięty lub importowany leniwie).
+
+        :raises RuntimeError: gdy pakiet keyring nie jest zainstalowany.
+        """
         if self._keyring is not None:
             return self._keyring
         try:
@@ -24,6 +30,7 @@ class CredentialStore:
         return keyring
 
     def get(self) -> str | None:
+        """Zwróć klucz z ``OPENAI_API_KEY`` lub z keyringu; ``None``, gdy go brak."""
         if os.getenv('OPENAI_API_KEY', '').strip():
             return os.environ['OPENAI_API_KEY'].strip()
         try:
@@ -32,6 +39,11 @@ class CredentialStore:
             return None
 
     def save(self, key: str) -> None:
+        """Zapisz klucz w systemowym magazynie poświadczeń.
+
+        :raises ValueError: pusty klucz.
+        :raises RuntimeError: brak działającego magazynu poświadczeń.
+        """
         if not key.strip():
             raise ValueError('Klucz OpenAI API nie może być pusty')
         try:
@@ -40,6 +52,7 @@ class CredentialStore:
             raise RuntimeError('Brak działającego systemowego magazynu poświadczeń. Użyj OPENAI_API_KEY.') from exc
 
     def remove(self) -> None:
+        """Usuń zapisany klucz; brak klucza lub magazynu nie jest błędem."""
         try:
             self._backend().delete_password(_SERVICE, _ACCOUNT)
         except Exception:
@@ -47,6 +60,11 @@ class CredentialStore:
 
 
 def create_openai_translator(session_key: str = '', *, credential_store: CredentialStore | None = None) -> OpenAITranslator:
+    """Utwórz ``OpenAITranslator`` z kluczem sesyjnym albo zapisanym w systemie.
+
+    :raises ValueError: gdy nie podano żadnego klucza.
+    :raises RuntimeError: gdy brakuje biblioteki ``openai``.
+    """
     store = credential_store or CredentialStore()
     key = session_key.strip() or store.get()
     if not key:

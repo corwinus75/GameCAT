@@ -1,3 +1,4 @@
+"""Importer źródeł z prostego JSON."""
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -5,6 +6,10 @@ from gamecat.importers.base import ImportedSegment
 
 
 def import_json(path: Path) -> Iterator[ImportedSegment]:
+    """Generator segmentów z JSON: słownika ``klucz: source`` lub listy obiektów z ``source``.
+
+    :raises ValueError: nieobsługiwana struktura lub wartość niebędąca napisem.
+    """
     with path.open('r', encoding='utf-8') as handle:
         data = json.load(handle)
     if isinstance(data, dict):

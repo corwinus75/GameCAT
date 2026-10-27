@@ -1,7 +1,8 @@
-"""Small XLSX table adapter using only ZIP and Office Open XML.
+"""Minimalny adapter tabel XLSX oparty wyłącznie na ZIP i Office Open XML.
 
-Reads inline/shared strings and numeric values; formula cells are not used as
-translation targets. Template exports leave all other ZIP entries intact.
+Odczytuje napisy wbudowane i współdzielone oraz liczby; komórki z formułami
+nie są używane jako cel tłumaczenia. Eksport do szablonu zachowuje wszystkie
+pozostałe elementy archiwum.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ ET.register_namespace('', S)
 
 
 def _col_to_index(col: str) -> int:
+    """Zamień literę kolumny (``A``, ``AB``) na indeks liczony od zera."""
     n = 0
     for letter in col:
         n = n * 26 + ord(letter.upper()) - ord('A') + 1
@@ -26,6 +28,7 @@ def _col_to_index(col: str) -> int:
 
 
 def _index_to_col(index: int) -> str:
+    """Zamień indeks kolumny liczony od zera na literę (``0 -> A``)."""
     index += 1
     result = ''
     while index:
@@ -35,6 +38,10 @@ def _index_to_col(index: int) -> str:
 
 
 def _sheet_path(zip_file: ZipFile, sheet_name: str) -> tuple[str, str]:
+    """Zwróć ścieżkę arkusza w archiwum i jego nazwę (domyślnie pierwszy arkusz).
+
+    :raises ValueError: brak arkuszy lub arkusza o podanej nazwie.
+    """
     book = ET.fromstring(zip_file.read('xl/workbook.xml'))
     sheets = book.find(f'{{{S}}}sheets')
     if sheets is None or not list(sheets):
@@ -56,6 +63,7 @@ def _sheet_path(zip_file: ZipFile, sheet_name: str) -> tuple[str, str]:
 
 
 def _shared_strings(zip_file: ZipFile) -> list[str]:
+    """Wczytaj tablicę napisów współdzielonych (``sharedStrings.xml``)."""
     if 'xl/sharedStrings.xml' not in zip_file.namelist():
         return []
     root = ET.fromstring(zip_file.read('xl/sharedStrings.xml'))
@@ -63,6 +71,7 @@ def _shared_strings(zip_file: ZipFile) -> list[str]:
 
 
 def _cell_value(cell: ET.Element, shared: list[str]) -> str:
+    """Zwróć tekstową wartość komórki (napis współdzielony, wbudowany lub liczba)."""
     if cell.get('t') == 'inlineStr':
         return ''.join(t.text or '' for t in cell.iter(f'{{{S}}}t'))
     v = cell.find(f'{{{S}}}v')
@@ -74,6 +83,7 @@ def _cell_value(cell: ET.Element, shared: list[str]) -> str:
 
 
 def read_table(path: Path, sheet_name: str = '') -> list[list[str]]:
+    """Wczytaj arkusz jako listę wierszy (list napisów); pierwszy wiersz to nagłówek."""
     with ZipFile(path) as z:
         sheet, _ = _sheet_path(z, sheet_name)
         root = ET.fromstring(z.read(sheet))
@@ -94,6 +104,7 @@ def read_table(path: Path, sheet_name: str = '') -> list[list[str]]:
 
 
 def _new_cell(ref: str, text: str) -> ET.Element:
+    """Utwórz komórkę z napisem wbudowanym, zachowując spacje brzegowe i nowe linie."""
     cell = ET.Element(f'{{{S}}}c', {'r': ref, 't': 'inlineStr'})
     text_el = ET.SubElement(ET.SubElement(cell, f'{{{S}}}is'), f'{{{S}}}t')
     if text.startswith(' ') or text.endswith(' ') or '\n' in text:
@@ -103,6 +114,10 @@ def _new_cell(ref: str, text: str) -> ET.Element:
 
 
 def _set_cell(row: ET.Element, col: int, value: str, row_number: int) -> None:
+    """Ustaw tekst komórki w wierszu, wstawiając ją w kolejności kolumn.
+
+    :raises ValueError: gdy komórka zawiera formułę.
+    """
     address = f'{_index_to_col(col)}{row_number}'
     cells = row.findall(f'{{{S}}}c')
     existing = next((c for c in cells if c.get('r') == address), None)
@@ -127,7 +142,13 @@ def _set_cell(row: ET.Element, col: int, value: str, row_number: int) -> None:
 
 def patch_table(template: Path, destination: Path, sheet_name: str, target_field: str,
                 targets: dict[int, str]) -> None:
-    """Update Target for 1-based *data* row positions, retain remaining XLSX payload."""
+    """Zapisz tłumaczenia w kolumnie Target kopii szablonu dla wierszy danych (od 1).
+
+    Pozostała zawartość archiwum XLSX jest kopiowana bez zmian, a wynik
+    zapisywany atomowo.
+
+    :raises ValueError: brak danych arkusza, nagłówka lub wskazanego wiersza.
+    """
     with ZipFile(template) as source:
         sheet, _ = _sheet_path(source, sheet_name)
         root = ET.fromstring(source.read(sheet))
@@ -161,7 +182,7 @@ def patch_table(template: Path, destination: Path, sheet_name: str, target_field
 
 
 def write_workbook(path: Path, sheets: dict[str, list[list[str]]]) -> None:
-    """Create a plain, editable XLSX table for GameCAT exchanges."""
+    """Utwórz prosty, edytowalny plik XLSX z podanymi arkuszami."""
     def xml(value: ET.Element) -> bytes:
         return ET.tostring(value, encoding='utf-8', xml_declaration=True)
 

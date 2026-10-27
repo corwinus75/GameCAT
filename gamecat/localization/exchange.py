@@ -1,10 +1,14 @@
-"""Import/export game localization data without changing unrelated template fields."""
+"""Import i eksport danych lokalizacyjnych bez zmiany niezwiązanych pól szablonu.
+
+Odczyt jest leniwy (generatory delegowane przez ``yield from``), a zapis
+odbywa się atomowo przez plik tymczasowy i ``os.replace``.
+"""
 from __future__ import annotations
 
 import csv
 import json
 import os
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 import xml.etree.ElementTree as ET
@@ -17,7 +21,8 @@ from gamecat.localization.xlsx import patch_table, read_table, write_workbook
 from gamecat.models.segment import Segment
 
 
-def _get_path(obj: dict, path: str, *, default=None):
+def _get_path(obj: dict, path: str, *, default: object = None) -> object:
+    """Odczytaj wartość z zagnieżdżonego słownika po ścieżce z kropkami (``a.b.c``)."""
     if not path:
         return default
     cur = obj
@@ -29,6 +34,10 @@ def _get_path(obj: dict, path: str, *, default=None):
 
 
 def _set_path(obj: dict, path: str, value: str) -> None:
+    """Ustaw wartość pod istniejącą ścieżką z kropkami w szablonie JSON.
+
+    :raises ValueError: gdy ścieżka nie istnieje w szablonie.
+    """
     cur = obj
     bits = path.split('.')
     for part in bits[:-1]:
@@ -41,6 +50,10 @@ def _set_path(obj: dict, path: str, value: str) -> None:
 
 
 def _json_records(root, profile: FormatProfile) -> list[tuple[str | None, dict]]:
+    """Zwróć rekordy JSON wskazane przez ``records_path`` jako pary (klucz zewnętrzny, obiekt).
+
+    :raises ValueError: brak ścieżki lub rekordy niebędące obiektami.
+    """
     obj = root
     if profile.records_path:
         for part in profile.records_path.split('.'):
@@ -59,6 +72,10 @@ def _json_records(root, profile: FormatProfile) -> list[tuple[str | None, dict]]
 
 
 def _xml_root(path: Path) -> ET.Element:
+    """Wczytaj korzeń XML, odrzucając pliki z DTD i encjami (ochrona przed XXE).
+
+    :raises ValueError: gdy plik zawiera DTD lub deklaracje encji.
+    """
     raw = path.read_bytes()
     if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():
         raise ValueError('XML with DTD/entities is not supported')
@@ -66,6 +83,10 @@ def _xml_root(path: Path) -> ET.Element:
 
 
 def _xml_records(root: ET.Element, profile: FormatProfile) -> list[ET.Element]:
+    """Znajdź elementy rekordów XML (domyślnie ``.//entry``).
+
+    :raises ValueError: gdy nie znaleziono rekordów.
+    """
     nodes = root.findall(profile.records_path or './/entry')
     if not nodes:
         raise ValueError(f'XML records not found: {profile.records_path or ".//entry"}')
@@ -73,6 +94,10 @@ def _xml_records(root: ET.Element, profile: FormatProfile) -> list[ET.Element]:
 
 
 def _xml_value(node: ET.Element, field: str, *, optional: bool = False) -> str | None:
+    """Odczytaj wartość pola rekordu XML: elementu lub atrybutu (``@nazwa``).
+
+    :raises ValueError: brak wymaganego pola.
+    """
     if not field:
         return None
     if field.startswith('@'):
@@ -92,6 +117,10 @@ def _xml_value(node: ET.Element, field: str, *, optional: bool = False) -> str |
 
 
 def _xml_set(node: ET.Element, field: str, value: str) -> None:
+    """Zapisz tłumaczenie w polu rekordu XML, tworząc prosty brakujący element.
+
+    :raises ValueError: zagnieżdżona ścieżka lub pole zawierające znaczniki.
+    """
     if field.startswith('@'):
         node.set(field[1:], value)
         return
@@ -107,6 +136,10 @@ def _xml_set(node: ET.Element, field: str, value: str) -> None:
 
 
 def _table_records(path: Path, profile: FormatProfile) -> list[dict[str, str]]:
+    """Wczytaj tabelę CSV/TSV/XLSX jako listę słowników ``kolumna: wartość``.
+
+    :raises ValueError: pusty plik lub brak nagłówka.
+    """
     if profile.format == 'xlsx':
         rows = read_table(path, profile.sheet_name)
         if not rows:
@@ -120,98 +153,161 @@ def _table_records(path: Path, profile: FormatProfile) -> list[dict[str, str]]:
         return list(reader)
 
 
+def _read_table_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]:
+    """Generator segmentów z tabeli CSV/TSV/XLSX według mapowania kolumn profilu."""
+    for i, row in enumerate(_table_records(path, profile), 1):
+        if profile.source_field not in row:
+            raise ValueError(f'Missing Source column: {profile.source_field}')
+        if profile.key_field and profile.key_field not in row:
+            raise ValueError(f'Missing key column: {profile.key_field}')
+        target = row.get(profile.target_field, '')
+        source = row[profile.source_field]
+        if source is None or target is None:
+            raise ValueError(f'Missing value in row {i}')
+        if profile.comment_field and profile.comment_field not in row:
+            raise ValueError(f'Missing context column: {profile.comment_field}')
+        comment = row.get(profile.comment_field, '') if profile.comment_field else ''
+        if comment is None:
+            comment = ''
+        yield ImportedSegment(i, source, row.get(profile.key_field) or None, target, str(comment))
+
+
+def _read_json_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]:
+    """Generator segmentów z (zagnieżdżonego) JSON według ścieżek pól profilu."""
+    root = json.loads(path.read_text(encoding='utf-8-sig'))
+    for i, (outer_key, obj) in enumerate(_json_records(root, profile), 1):
+        source = _get_path(obj, profile.source_field)
+        target = _get_path(obj, profile.target_field, default='')
+        key = _get_path(obj, profile.key_field, default=outer_key)
+        if not isinstance(source, str) or not isinstance(target, str):
+            raise ValueError(f'JSON text must be a string at position {i}')
+        comment = _get_path(obj, profile.comment_field, default='') if profile.comment_field else ''
+        if not isinstance(comment, str):
+            raise ValueError(f'JSON context must be a string at position {i}')
+        yield ImportedSegment(i, source, str(key) if key is not None else None, target, comment)
+
+
+def _read_xml_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]:
+    """Generator segmentów z rekordów XML (elementy lub atrybuty ``@nazwa``)."""
+    for i, node in enumerate(_xml_records(_xml_root(path), profile), 1):
+        key = _xml_value(node, profile.key_field, optional=not bool(profile.key_field))
+        source = _xml_value(node, profile.source_field)
+        target = _xml_value(node, profile.target_field, optional=True) or ''
+        comment = _xml_value(node, profile.comment_field, optional=True) or ''
+        yield ImportedSegment(i, source, key, target, comment)
+
+
+def _read_txt_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]:
+    """Generator segmentów z pliku TXT – każda linia to osobny segment."""
+    with path.open(encoding='utf-8-sig') as fp:
+        for i, line in enumerate(fp, 1):
+            yield ImportedSegment(i, line.rstrip('\r\n'))
+
+
+_SOURCE_READERS: dict[str, Callable[[Path, FormatProfile], Iterator[ImportedSegment]]] = {
+    'csv': _read_table_source,
+    'tsv': _read_table_source,
+    'xlsx': _read_table_source,
+    'json': _read_json_source,
+    'xml': _read_xml_source,
+    'txt': _read_txt_source,
+}
+
+
 def read_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]:
-    """Read source and optional target using a trusted declarative mapping."""
+    """Wczytuj leniwie segmenty (Source, opcjonalnie Target i komentarz) według profilu.
+
+    Funkcja jest generatorem-dyspozytorem: sprawdza zgodność formatu, a samo
+    czytanie deleguje przez ``yield from`` do generatora właściwego dla
+    formatu. Wywołujący dostaje jeden strumień ``ImportedSegment`` niezależnie
+    od formatu pliku, a ``ProjectService`` zapisuje go w jednej transakcji.
+
+    :raises ValueError: niezgodny lub nieobsługiwany format, brak pól w pliku.
+    """
     if path.suffix.lower().lstrip('.') != profile.format:
         raise ValueError('Profile format does not match file extension')
-    if profile.format in {'csv', 'tsv', 'xlsx'}:
-        for i, row in enumerate(_table_records(path, profile), 1):
-            if profile.source_field not in row:
-                raise ValueError(f'Missing Source column: {profile.source_field}')
-            if profile.key_field and profile.key_field not in row:
-                raise ValueError(f'Missing key column: {profile.key_field}')
-            target = row.get(profile.target_field, '')
-            source = row[profile.source_field]
-            if source is None or target is None:
-                raise ValueError(f'Missing value in row {i}')
-            if profile.comment_field and profile.comment_field not in row:
-                raise ValueError(f'Missing context column: {profile.comment_field}')
-            comment = row.get(profile.comment_field, '') if profile.comment_field else ''
-            if comment is None:
-                comment = ''
-            yield ImportedSegment(i, source, row.get(profile.key_field) or None, target, str(comment))
-        return
-    if profile.format == 'json':
-        root = json.loads(path.read_text(encoding='utf-8-sig'))
-        for i, (outer_key, obj) in enumerate(_json_records(root, profile), 1):
-            source = _get_path(obj, profile.source_field)
-            target = _get_path(obj, profile.target_field, default='')
-            key = _get_path(obj, profile.key_field, default=outer_key)
-            if not isinstance(source, str) or not isinstance(target, str):
-                raise ValueError(f'JSON text must be a string at position {i}')
-            comment = _get_path(obj, profile.comment_field, default='') if profile.comment_field else ''
-            if not isinstance(comment, str):
-                raise ValueError(f'JSON context must be a string at position {i}')
-            yield ImportedSegment(i, source, str(key) if key is not None else None, target, comment)
-        return
-    if profile.format == 'xml':
-        for i, node in enumerate(_xml_records(_xml_root(path), profile), 1):
-            key = _xml_value(node, profile.key_field, optional=not bool(profile.key_field))
-            source = _xml_value(node, profile.source_field)
-            target = _xml_value(node, profile.target_field, optional=True) or ''
-            comment = _xml_value(node, profile.comment_field, optional=True) or ''
-            yield ImportedSegment(i, source, key, target, comment)
-        return
-    if profile.format == 'txt':
-        with path.open(encoding='utf-8-sig') as fp:
-            for i, line in enumerate(fp, 1):
-                yield ImportedSegment(i, line.rstrip('\r\n'))
-        return
-    raise ValueError(f'Unsupported format: {profile.format}')
+    reader = _SOURCE_READERS.get(profile.format)
+    if reader is None:
+        raise ValueError(f'Unsupported format: {profile.format}')
+    yield from reader(path, profile)
+
+
+def _read_table_translations(path: Path, profile: FormatProfile) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z tabeli CSV/TSV/XLSX (kolumna Target i opcjonalny klucz)."""
+    for position, row in enumerate(_table_records(path, profile), 1):
+        if profile.target_field not in row:
+            raise ValueError(f'Missing Target column: {profile.target_field}')
+        if profile.key_field and profile.key_field not in row:
+            raise ValueError(f'Missing key column: {profile.key_field}')
+        target = row[profile.target_field]
+        if not isinstance(target, str):
+            raise ValueError(f'Invalid Target value at {position}')
+        key = row.get(profile.key_field) if profile.key_field else None
+        yield ImportedTranslation(target, key=key or None, position=None if key else position)
+
+
+def _read_json_translations(path: Path, profile: FormatProfile) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z JSON; bez klucza dopasowanie następuje po pozycji."""
+    root = json.loads(path.read_text(encoding='utf-8-sig'))
+    for position, (outer_key, obj) in enumerate(_json_records(root, profile), 1):
+        target = _get_path(obj, profile.target_field)
+        if not isinstance(target, str):
+            raise ValueError(f'Missing or invalid JSON Target at {position}')
+        key = _get_path(obj, profile.key_field, default=outer_key)
+        yield ImportedTranslation(target, key=str(key) if key is not None else None,
+                                  position=None if key is not None else position)
+
+
+def _read_xml_translations(path: Path, profile: FormatProfile) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z rekordów XML."""
+    for position, node in enumerate(_xml_records(_xml_root(path), profile), 1):
+        target = _xml_value(node, profile.target_field)
+        key = _xml_value(node, profile.key_field, optional=True)
+        yield ImportedTranslation(target or '', key=key,
+                                  position=None if key else position)
+
+
+def _read_txt_translations(path: Path, profile: FormatProfile) -> Iterator[ImportedTranslation]:
+    """Generator tłumaczeń z TXT – linia N trafia do segmentu na pozycji N."""
+    with path.open('r', encoding='utf-8-sig') as fp:
+        for position, line in enumerate(fp, 1):
+            yield ImportedTranslation(line.rstrip('\r\n'), position=position)
+
+
+_TRANSLATION_READERS: dict[str, Callable[[Path, FormatProfile], Iterator[ImportedTranslation]]] = {
+    'csv': _read_table_translations,
+    'tsv': _read_table_translations,
+    'xlsx': _read_table_translations,
+    'json': _read_json_translations,
+    'xml': _read_xml_translations,
+    'txt': _read_txt_translations,
+}
 
 
 def read_translations(path: Path, profile: FormatProfile) -> Iterator[ImportedTranslation]:
-    """Read translation-only files with Target and optional key (no Source needed)."""
+    """Wczytuj leniwie same tłumaczenia (Target + opcjonalny klucz), bez tekstu źródłowego.
+
+    Podobnie jak :func:`read_source` deleguje czytanie przez ``yield from``
+    do generatora odpowiedniego formatu.
+
+    :raises ValueError: niezgodny lub nieobsługiwany format, brak kolumny Target.
+    """
     if path.suffix.lower().lstrip('.') != profile.format:
         raise ValueError('Profile format does not match translation file')
-    if profile.format in {'csv', 'tsv', 'xlsx'}:
-        for position, row in enumerate(_table_records(path, profile), 1):
-            if profile.target_field not in row:
-                raise ValueError(f'Missing Target column: {profile.target_field}')
-            if profile.key_field and profile.key_field not in row:
-                raise ValueError(f'Missing key column: {profile.key_field}')
-            target = row[profile.target_field]
-            if not isinstance(target, str):
-                raise ValueError(f'Invalid Target value at {position}')
-            key = row.get(profile.key_field) if profile.key_field else None
-            yield ImportedTranslation(target, key=key or None, position=None if key else position)
-        return
-    if profile.format == 'json':
-        root = json.loads(path.read_text(encoding='utf-8-sig'))
-        for position, (outer_key, obj) in enumerate(_json_records(root, profile), 1):
-            target = _get_path(obj, profile.target_field)
-            if not isinstance(target, str):
-                raise ValueError(f'Missing or invalid JSON Target at {position}')
-            key = _get_path(obj, profile.key_field, default=outer_key)
-            yield ImportedTranslation(target, key=str(key) if key is not None else None,
-                                      position=None if key is not None else position)
-        return
-    if profile.format == 'xml':
-        for position, node in enumerate(_xml_records(_xml_root(path), profile), 1):
-            target = _xml_value(node, profile.target_field)
-            key = _xml_value(node, profile.key_field, optional=True)
-            yield ImportedTranslation(target or '', key=key,
-                                      position=None if key else position)
-        return
-    if profile.format == 'txt':
-        with path.open('r', encoding='utf-8-sig') as fp:
-            for position, line in enumerate(fp, 1):
-                yield ImportedTranslation(line.rstrip('\r\n'), position=position)
-        return
-    raise ValueError(f'Unsupported format: {profile.format}')
+    reader = _TRANSLATION_READERS.get(profile.format)
+    if reader is None:
+        raise ValueError(f'Unsupported format: {profile.format}')
+    yield from reader(path, profile)
 
 
 def _segments_for_template(segments: Iterable[Segment], template: list[ImportedSegment]) -> dict[int, Segment]:
+    """Dopasuj segmenty projektu do rekordów szablonu (po kluczu albo pozycji).
+
+    Zwraca słownik ``pozycja w szablonie -> segment``.
+
+    :raises ValueError: duplikaty kluczy/pozycji, niezgodny Source lub segment
+        projektu nieobecny w szablonie.
+    """
     by_key: dict[str, Segment] = {}
     by_pos: dict[int, Segment] = {}
     for segment in segments:
@@ -243,6 +339,7 @@ def _segments_for_template(segments: Iterable[Segment], template: list[ImportedS
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
+    """Zapisz bajty atomowo: najpierw plik tymczasowy, potem ``os.replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile(prefix='.gamecat-', dir=path.parent, delete=False) as file:
         temp = Path(file.name)
@@ -255,10 +352,14 @@ def _atomic_write(path: Path, payload: bytes) -> None:
 
 def export_translations(segments: Iterable[Segment], path: Path, profile: FormatProfile,
                         *, template_path: Path | None = None) -> int:
-    """Export flat files or patch a copy of a matching source template.
+    """Wyeksportuj tłumaczenia do pliku płaskiego albo do kopii szablonu źródłowego.
 
-    Never updates a template in place. Project Source values are compared to the
-    template before writing any output; unrelated fields are retained.
+    Szablon nigdy nie jest modyfikowany w miejscu. Przed zapisem Source projektu
+    jest porównywany z szablonem; pozostałe pola zostają bez zmian. CSV/TSV/TXT
+    bez szablonu są zapisywane strumieniowo. Zwraca liczbę zapisanych segmentów.
+
+    :raises ValueError: niezgodne rozszerzenie, szablon jako plik wyjściowy
+        lub niezgodność szablonu z projektem.
     """
     if path.suffix.lower().lstrip('.') != profile.format:
         raise ValueError('Export extension/profile mismatch')

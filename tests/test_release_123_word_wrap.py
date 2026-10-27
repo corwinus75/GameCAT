@@ -1,4 +1,4 @@
-"""GUI regression tests: long CAT content must reflow without truncation."""
+"""Testy regresyjne GUI: długie teksty muszą się zawijać bez obcinania."""
 from __future__ import annotations
 
 import importlib.util

@@ -1,4 +1,4 @@
-"""Regression coverage for segment references and current-item highlighting in TM."""
+"""Testy regresyjne odwołań do segmentów i wyróżniania bieżącej sugestii TM."""
 from __future__ import annotations
 
 import importlib.util
@@ -155,16 +155,12 @@ def test_async_tm_suggestions_preserve_current_segment_snapshot(tmp_path):
 
 
 def test_editing_target_debounces_tm_highlight_refresh():
-    """Execute real MainWindow handler with fake adapters, without Qt installed."""
+    """Wykonaj rzeczywistą metodę okna głównego z atrapami, bez Qt."""
     import ast
-    from pathlib import Path
     from types import SimpleNamespace
 
-    gui_path = Path(__file__).resolve().parents[1] / 'gamecat/gui/main_window.py'
-    parsed = ast.parse(gui_path.read_text(encoding='utf-8'))
-    window = next(node for node in parsed.body if isinstance(node, ast.ClassDef) and node.name == 'MainWindow')
-    method = next(node for node in window.body if isinstance(node, ast.FunctionDef)
-                  and node.name == '_on_segment_modified')
+    from gui_source import find_method
+    method, gui_path = find_method('_on_segment_modified')
     method.decorator_list = []
     class Scheduled:
         callbacks = []

@@ -1,1 +1,1 @@
-"""GameCAT package."""
+"""GameCAT – desktopowy program CAT do lokalizacji gier."""

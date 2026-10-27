@@ -1,3 +1,4 @@
+"""Eksport segmentów do JSON."""
 import json
 from collections.abc import Iterable
 from pathlib import Path
@@ -5,9 +6,13 @@ from gamecat.models.segment import Segment
 
 
 def export_json(segments: Iterable[Segment], path: Path, shape: str = 'list', *, ordered: bool = False) -> None:
-    """Write incrementally when caller supplies DB-ordered segments.
+    """Zapisz segmenty do JSON jako listę obiektów albo słownik ``klucz: Target``.
 
-    Public API preserves historical ordering for arbitrary input sequences.
+    Przy ``ordered=True`` dane są zapisywane przyrostowo (bez budowy całej
+    struktury w pamięci) w kolejności z bazy; w przeciwnym razie segmenty
+    są sortowane według pozycji.
+
+    :raises ValueError: nieobsługiwany kształt JSON.
     """
     if shape not in {'dict', 'list'}:
         raise ValueError(f'Unsupported JSON shape: {shape}')

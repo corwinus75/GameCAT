@@ -1,5 +1,11 @@
+"""Repozytoria SQLite dla projektów, segmentów, glosariusza i pamięci tłumaczeniowej.
+
+Błędy ``sqlite3`` są na granicy API zamieniane na ``DatabaseError`` przez
+dekorator klasy ``repository_errors``.
+"""
 from __future__ import annotations
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import ParamSpec, TypeVar
 from functools import wraps
 from datetime import datetime
 import sqlite3
@@ -10,30 +16,40 @@ from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.database.segment_iterator import SegmentBatchIterator
 from gamecat.exceptions import DatabaseError
 
+P = ParamSpec('P')
+R = TypeVar('R')
+T = TypeVar('T')
+
 _INSERT_SEGMENT = '''INSERT INTO segments(project_id,position,key,source,target,status,comment,created_at,updated_at,ai_generated)
                 VALUES(?,?,?,?,?,?,?,?,?,?)'''
 _UPDATE_SEGMENT = 'UPDATE segments SET target=?,status=?,comment=?,updated_at=?,ai_generated=? WHERE id=?'
 
 
 def _insert_params(segment: Segment) -> tuple:
+    """Zwróć parametry instrukcji INSERT dla segmentu."""
     return (segment.project_id, segment.position, segment.key, segment.source, segment.target,
             segment.status.value, segment.comment, segment.created_at.isoformat(), segment.updated_at.isoformat(), int(segment.ai_generated))
 
 
 def _update_params(segment: Segment) -> tuple:
+    """Zwróć parametry instrukcji UPDATE dla segmentu.
+
+    :raises ValueError: gdy segment nie ma jeszcze ``id``.
+    """
     if segment.id is None:
         raise ValueError('segment has no id')
     return (segment.target, segment.status.value, segment.comment, segment.updated_at.isoformat(), int(segment.ai_generated), segment.id)
 
 
 def _dt(value: str) -> datetime:
+    """Zamień datę zapisaną w ISO 8601 na ``datetime``."""
     return datetime.fromisoformat(value)
 
 
-def database_errors(method):
-    """Convert low-level SQLite failures at repository API boundaries."""
+def database_errors(method: Callable[P, R]) -> Callable[P, R]:
+    """Dekorator metody: zamień błędy ``sqlite3.Error`` na ``DatabaseError`` z przyczyną w ``__cause__``."""
     @wraps(method)
-    def wrapped(*args, **kwargs):
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return method(*args, **kwargs)
         except sqlite3.Error as exc:
@@ -41,8 +57,11 @@ def database_errors(method):
     return wrapped
 
 
-def repository_errors(cls):
-    """Decorate repository methods; preserve domain validation exceptions."""
+def repository_errors(cls: type[T]) -> type[T]:
+    """Dekorator klasy: opakuj wszystkie metody repozytorium dekoratorem ``database_errors``.
+
+    Wyjątki walidacji domenowej (``ValueError``, ``KeyError``) przechodzą bez zmian.
+    """
     for name, member in vars(cls).items():
         if name != '__init__' and callable(member):
             setattr(cls, name, database_errors(member))
@@ -51,25 +70,41 @@ def repository_errors(cls):
 
 @repository_errors
 class ProjectRepository:
-    def __init__(self, connection: sqlite3.Connection): self.connection = connection
+    """Repozytorium projektów zapisanych w tabeli ``projects``."""
+    def __init__(self, connection: sqlite3.Connection):
+        """Zapamiętaj współdzielone połączenie z bazą."""
+        self.connection = connection
+
     def create(self, project: Project) -> Project:
+        """Zapisz nowy projekt i uzupełnij jego ``id``."""
         with self.connection:
             cur = self.connection.execute(
                 'INSERT INTO projects(name,source_language,target_language,source_format,created_at,updated_at) VALUES(?,?,?,?,?,?)',
                 (project.name, project.source_language, project.target_language, project.source_format, project.created_at.isoformat(), project.updated_at.isoformat()))
         project.id = cur.lastrowid
         return project
+
     def get(self, project_id: int) -> Project:
+        """Wczytaj projekt o podanym ID.
+
+        :raises KeyError: gdy projekt nie istnieje.
+        """
         with self.connection:
             row = self.connection.fetchone('SELECT * FROM projects WHERE id=?', (project_id,))
-        if row is None: raise KeyError(project_id)
+        if row is None:
+            raise KeyError(project_id)
         return Project(row['name'], row['source_language'], row['target_language'], row['source_format'], row['id'], _dt(row['created_at']), _dt(row['updated_at']))
+
     def list_all(self) -> list[Project]:
+        """Zwróć wszystkie projekty w kolejności tworzenia."""
         with self.connection:
             rows = self.connection.fetchall('SELECT id FROM projects ORDER BY id')
         return [self.get(row['id']) for row in rows]
+
     def update(self, project: Project) -> None:
-        if project.id is None: raise ValueError('project has no id')
+        """Zapisz zmienione metadane projektu."""
+        if project.id is None:
+            raise ValueError('project has no id')
         with self.connection:
             self.connection.execute('UPDATE projects SET name=?,source_language=?,target_language=?,source_format=?,updated_at=? WHERE id=?',
                                     (project.name, project.source_language, project.target_language, project.source_format, project.updated_at.isoformat(), project.id))
@@ -77,9 +112,15 @@ class ProjectRepository:
 
 @repository_errors
 class SegmentRepository:
-    def __init__(self, connection: sqlite3.Connection): self.connection = connection
+    """Repozytorium segmentów projektu."""
+    def __init__(self, connection: sqlite3.Connection):
+        """Zapamiętaj współdzielone połączenie z bazą."""
+        self.connection = connection
+
     def create(self, segment: Segment) -> Segment:
-        if segment.project_id is None: raise ValueError('segment requires project_id')
+        """Zapisz pojedynczy segment i uzupełnij jego ``id``."""
+        if segment.project_id is None:
+            raise ValueError('segment requires project_id')
         with self.connection:
             cur = self.connection.execute(_INSERT_SEGMENT, _insert_params(segment))
         segment.id = cur.lastrowid
@@ -100,19 +141,32 @@ class SegmentRepository:
                 segment.id = cur.lastrowid
                 created.append(segment)
         return created
+
     def _from_row(self, row: sqlite3.Row) -> Segment:
+        """Zbuduj obiekt ``Segment`` z wiersza tabeli ``segments``."""
         return Segment(row['source'], row['position'], row['key'], row['target'], row['status'], row['comment'], row['id'], row['project_id'], _dt(row['created_at']), _dt(row['updated_at']), bool(row['ai_generated']))
+
     def get(self, segment_id: int | None) -> Segment:
-        if segment_id is None: raise KeyError(segment_id)
+        """Wczytaj segment o podanym ID.
+
+        :raises KeyError: gdy ID jest puste lub segment nie istnieje.
+        """
+        if segment_id is None:
+            raise KeyError(segment_id)
         with self.connection:
             row = self.connection.fetchone('SELECT * FROM segments WHERE id=?', (segment_id,))
-        if row is None: raise KeyError(segment_id)
+        if row is None:
+            raise KeyError(segment_id)
         return self._from_row(row)
+
     def list_for_project(self, project_id: int) -> list[Segment]:
+        """Zwróć listę wszystkich segmentów projektu w kolejności pozycji."""
         with self.connection:
             rows = self.connection.fetchall('SELECT * FROM segments WHERE project_id=? ORDER BY position,id', (project_id,))
         return [self._from_row(r) for r in rows]
+
     def update(self, segment: Segment) -> None:
+        """Zapisz Target, status, komentarz i znacznik AI segmentu."""
         params = _update_params(segment)
         with self.connection:
             self.connection.execute(_UPDATE_SEGMENT, params)
@@ -127,16 +181,16 @@ class SegmentRepository:
         return len(params)
 
     def iter_for_project(self, project_id: int, batch_size: int = 500) -> SegmentBatchIterator:
-        """Zwróć iterator czytający segmenty projektu partiami."""
+        """Zwróć iterator (``SegmentBatchIterator``) czytający segmenty projektu partiami."""
         return SegmentBatchIterator(self.connection, project_id, self._from_row, batch_size)
 
     def references_for_pairs(
         self, project_id: int, pairs: Iterable[tuple[str, str]],
     ) -> dict[tuple[str, str], tuple[tuple[int, int], ...]]:
-        """Map exact TM Source/Target pairs to (segment ID, position) in a project.
+        """Przypisz dokładnym parom Source/Target z TM pary (ID segmentu, pozycja) w projekcie.
 
-        An entry imported from another TM database has no local segment ID.
-        A pair reused by multiple segments returns *all* matching references.
+        Wpis zaimportowany z innej bazy TM nie ma lokalnego ID segmentu. Para
+        użyta przez wiele segmentów zwraca *wszystkie* pasujące odwołania.
         """
         distinct_pairs = list(dict.fromkeys(pairs))
         if not distinct_pairs:
@@ -159,12 +213,13 @@ class SegmentRepository:
         return {pair: tuple(refs) for pair, refs in grouped.items()}
 
     def count_for_project(self, project_id: int) -> int:
+        """Zwróć liczbę segmentów projektu."""
         with self.connection:
             row = self.connection.fetchone('SELECT COUNT(*) FROM segments WHERE project_id=?', (project_id,))
         return int(row[0])
 
     def status_counts(self, project_id: int) -> dict[SegmentStatus, int]:
-        """Return exclusive workflow status counts for a project."""
+        """Zwróć rozłączne liczności statusów workflow w projekcie."""
         with self.connection:
             rows = self.connection.fetchall(
                 'SELECT status, COUNT(*) AS count FROM segments WHERE project_id=? GROUP BY status',
@@ -178,10 +233,16 @@ class SegmentRepository:
 
 @repository_errors
 class GlossaryRepository:
+    """Repozytorium glosariusza: terminy i ich warianty tłumaczeń."""
     def __init__(self, connection: sqlite3.Connection):
+        """Zapamiętaj współdzielone połączenie z bazą."""
         self.connection = connection
 
     def _term_from_id(self, term_id: int) -> GlossaryTerm:
+        """Wczytaj termin wraz z wariantami (wywołujący odpowiada za transakcję).
+
+        :raises KeyError: gdy termin nie istnieje.
+        """
         row = self.connection.fetchone('SELECT * FROM glossary_terms WHERE id=?', (term_id,))
         if row is None:
             raise KeyError(term_id)
@@ -191,10 +252,12 @@ class GlossaryRepository:
         return GlossaryTerm(row['source_term'], targets, row['description'], bool(row['case_sensitive']), row['id'], row['project_id'])
 
     def get_term(self, term_id: int) -> GlossaryTerm:
+        """Wczytaj termin o podanym ID wraz z wariantami."""
         with self.connection:
             return self._term_from_id(term_id)
 
     def get_by_identity(self, project_id: int, source_term: str, case_sensitive: bool) -> GlossaryTerm | None:
+        """Znajdź termin po tożsamości (projekt, termin źródłowy, wielkość liter) lub zwróć ``None``."""
         source = source_term.strip()
         with self.connection:
             row = self.connection.fetchone(
@@ -204,6 +267,7 @@ class GlossaryRepository:
             return self._term_from_id(row['id']) if row else None
 
     def list_terms(self, project_id: int) -> list[GlossaryTerm]:
+        """Zwróć terminy projektu posortowane alfabetycznie bez rozróżniania wielkości liter."""
         with self.connection:
             rows = self.connection.fetchall(
                 'SELECT id FROM glossary_terms WHERE project_id=? ORDER BY source_term COLLATE NOCASE,id',
@@ -212,6 +276,7 @@ class GlossaryRepository:
             return [self._term_from_id(r['id']) for r in rows]
 
     def search_terms(self, project_id: int, query: str) -> list[GlossaryTerm]:
+        """Zwróć terminy, których Source lub dowolny wariant zawiera szukaną frazę."""
         needle = query.strip().casefold()
         terms = self.list_terms(project_id)
         if not needle:
@@ -219,6 +284,10 @@ class GlossaryRepository:
         return [t for t in terms if needle in t.source_term.casefold() or any(needle in x.casefold() for x in t.targets)]
 
     def create_term(self, term: GlossaryTerm) -> GlossaryTerm:
+        """Zapisz nowy termin z wariantami w jednej transakcji.
+
+        :raises ValueError: gdy termin nie ma ``project_id``.
+        """
         if term.project_id is None:
             raise ValueError('glossary term requires project_id')
         with self.connection:
@@ -234,6 +303,7 @@ class GlossaryRepository:
         return term
 
     def update_term_fields(self, term_id: int, source_term: str, description: str, case_sensitive: bool) -> None:
+        """Zmień termin źródłowy, opis i czułość na wielkość liter."""
         with self.connection:
             self.connection.execute(
                 'UPDATE glossary_terms SET source_term=?,description=?,case_sensitive=? WHERE id=?',
@@ -241,10 +311,15 @@ class GlossaryRepository:
             )
 
     def delete_term(self, term_id: int) -> None:
+        """Usuń termin (warianty usuwa kaskadowo klucz obcy)."""
         with self.connection:
             self.connection.execute('DELETE FROM glossary_terms WHERE id=?', (term_id,))
 
     def add_variant(self, term_id: int, target: str) -> bool:
+        """Dodaj wariant tłumaczenia; zwraca ``False``, gdy już istniał.
+
+        :raises ValueError: gdy wariant jest pusty.
+        """
         value = target.strip()
         if not value:
             raise ValueError('target variant cannot be blank')
@@ -256,12 +331,18 @@ class GlossaryRepository:
         return cur.rowcount > 0
 
     def remove_variant(self, term_id: int, target: str) -> None:
+        """Usuń wariant tłumaczenia z terminu."""
         with self.connection:
             self.connection.execute(
                 'DELETE FROM glossary_translations WHERE term_id=? AND target_term=?', (term_id, target.strip())
             )
 
     def merge_terms(self, project_id: int, terms: Iterable[GlossaryTerm]) -> tuple[int, int, int]:
+        """Scal importowane terminy z glosariuszem projektu w jednej transakcji.
+
+        Zwraca krotkę (nowe terminy, nowe warianty, pominięte duplikaty).
+        Istniejący opis nie jest nadpisywany.
+        """
         new_terms = new_variants = duplicates = 0
         with self.connection:
             for incoming in terms:
@@ -294,6 +375,7 @@ class GlossaryRepository:
 
     # 0.6 compatibility path. New code should use list_terms/create_term.
     def create(self, entry: GlossaryEntry) -> GlossaryEntry:
+        """Ścieżka zgodności z 0.6: zapisz płaski wpis jako termin lub nowy wariant."""
         if entry.project_id is None:
             raise ValueError('global glossary entries are not supported in 0.7')
         existing = self.get_by_identity(entry.project_id, entry.source_term, entry.case_sensitive)
@@ -306,6 +388,7 @@ class GlossaryRepository:
         return entry
 
     def list_for_project(self, project_id: int | None) -> list[GlossaryEntry]:
+        """Ścieżka zgodności z 0.6: zwróć glosariusz jako płaską listę wpisów."""
         if project_id is None:
             return []
         flat: list[GlossaryEntry] = []
@@ -317,8 +400,13 @@ class GlossaryRepository:
 
 @repository_errors
 class TranslationMemoryRepository:
-    def __init__(self, connection: sqlite3.Connection): self.connection = connection
+    """Repozytorium pamięci tłumaczeniowej (wewnętrznej lub w osobnym pliku)."""
+    def __init__(self, connection: sqlite3.Connection):
+        """Zapamiętaj połączenie z bazą TM."""
+        self.connection = connection
+
     def create(self, entry: TranslationMemoryEntry) -> TranslationMemoryEntry:
+        """Dodaj parę do TM; przy duplikacie zwróć istniejący wpis z jego ``id``."""
         with self.connection:
             cur = self.connection.execute('INSERT INTO translation_memory(source,target,source_language,target_language,origin_project,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(source,target,source_language,target_language) DO NOTHING',
                                           (entry.source, entry.target, entry.source_language, entry.target_language, entry.origin_project, entry.created_at.isoformat()))
@@ -329,18 +417,24 @@ class TranslationMemoryRepository:
                                                (entry.source, entry.target, entry.source_language, entry.target_language))
                 entry.id = row['id']
         return entry
+
     def list_all(self) -> list[TranslationMemoryEntry]:
+        """Zwróć wszystkie wpisy TM w kolejności dodania."""
         with self.connection:
             rows = self.connection.fetchall('SELECT * FROM translation_memory ORDER BY id')
         return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]
+
     def list_for_languages(self, source_language: str, target_language: str) -> list[TranslationMemoryEntry]:
+        """Zwróć wpisy TM dla podanej pary języków."""
         with self.connection:
             rows = self.connection.fetchall(
                 'SELECT * FROM translation_memory WHERE source_language=? AND target_language=? ORDER BY id',
                 (source_language, target_language),
             )
         return [TranslationMemoryEntry(r['source'], r['target'], r['source_language'], r['target_language'], r['origin_project'], r['id'], _dt(r['created_at'])) for r in rows]
+
     def contains_pair(self, source: str, target: str, source_language: str, target_language: str) -> bool:
+        """Sprawdź, czy TM zawiera dokładnie tę parę Source/Target dla pary języków."""
         with self.connection:
             row = self.connection.fetchone(
                 'SELECT 1 FROM translation_memory WHERE source=? AND target=? AND source_language=? AND target_language=? LIMIT 1',
@@ -349,7 +443,12 @@ class TranslationMemoryRepository:
         return row is not None
 
     def create_unique_many(self, entries: Iterable[TranslationMemoryEntry]) -> int:
-        """Insert distinct bilingual pairs atomically; preserve existing rows."""
+        """Atomowo dodaj unikalne pary dwujęzyczne; istniejące wiersze pozostają bez zmian.
+
+        Zwraca liczbę faktycznie dodanych wpisów.
+
+        :raises ValueError: gdy Source, Target lub któryś z języków jest pusty.
+        """
         created = 0
         statement = """INSERT OR IGNORE INTO translation_memory
                        (source,target,source_language,target_language,origin_project,created_at)

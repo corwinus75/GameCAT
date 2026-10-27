@@ -1,4 +1,4 @@
-"""Exercise actual project-open controller logic without Qt in CI."""
+"""Testy logiki otwierania projektu w kontrolerze okna, bez Qt."""
 from __future__ import annotations
 
 import ast
@@ -10,10 +10,8 @@ from gamecat.services.project_service import ProjectService
 
 
 def open_method():
-    path = Path(__file__).resolve().parents[1] / 'gamecat/gui/main_window.py'
-    root = ast.parse(path.read_text(encoding='utf-8'))
-    cls = next(n for n in root.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow')
-    function = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == 'open_project_dialog')
+    from gui_source import find_method
+    function, path = find_method('open_project_dialog')
     scope = {'Path': Path, 'ProjectService': ProjectService}
     return function, scope, path
 

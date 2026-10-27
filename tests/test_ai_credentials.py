@@ -1,4 +1,3 @@
-import os
 import pytest
 from gamecat.ai.credentials import CredentialStore, create_openai_translator
 

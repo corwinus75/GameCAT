@@ -1,4 +1,4 @@
-"""New opt-in manual translation workflow. Existing import and API methods remain compatible."""
+"""Ręczny workflow zapisu tłumaczeń z historią; dotychczasowe API importu pozostaje zgodne."""
 from pathlib import Path
 
 import pytest

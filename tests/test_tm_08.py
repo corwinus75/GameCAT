@@ -178,7 +178,7 @@ def test_import_tm_preserves_language_pairs_and_unicode(tmp_path: Path):
 
 
 def test_pretranslation_does_not_apply_stale_matches_to_different_source(tmp_path: Path):
-    """A report from an older snapshot must never pretranslate unrelated text."""
+    """Raport ze starszej migawki nie może pretranslować niezwiązanego tekstu."""
     p1 = ProjectService(tmp_path / 'first.sqlite')
     p2 = ProjectService(tmp_path / 'second.sqlite')
     try:
@@ -200,7 +200,7 @@ def test_pretranslation_does_not_apply_stale_matches_to_different_source(tmp_pat
 
 def test_tm_csv_quotes_newlines_placeholders_survive_roundtrip(tmp_path: Path):
     from gamecat.models.translation_memory import TranslationMemoryEntry
-    from gamecat.tm.exchange import read_tm, write_tm
+    from gamecat.tm.exchange import read_tm
     source = '"Hello", {name}\nNext line, please.'
     target = '„Witaj”, {name}\nNastępna linia, proszę.'
     original = [TranslationMemoryEntry(source, target, 'en', 'pl')]

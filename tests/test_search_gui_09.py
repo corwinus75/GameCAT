@@ -1,4 +1,4 @@
-"""GUI smoke tests (run on a machine with PySide6 installed)."""
+"""Testy dymne GUI wyszukiwania (wymagają PySide6)."""
 from __future__ import annotations
 
 import importlib.util
@@ -35,7 +35,7 @@ def test_editor_filters_and_invalid_regex():
 
 def test_replace_dialog_preview_invalidate_and_protection():
     os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-    from PySide6.QtWidgets import QApplication, QDialogButtonBox
+    from PySide6.QtWidgets import QApplication
     from gamecat.gui.replace_dialog import BatchReplaceDialog
     from gamecat.models.segment import Segment
 

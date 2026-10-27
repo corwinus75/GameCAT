@@ -1,1 +1,1 @@
-"""Configurable, safe localization exchange formats (GameCAT 0.11)."""
+"""Konfigurowalne i bezpieczne formaty wymiany lokalizacji (CSV, TSV, XLSX, JSON, XML, TXT)."""

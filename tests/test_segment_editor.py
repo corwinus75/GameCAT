@@ -27,7 +27,6 @@ def test_segment_editor_edit_navigation_filter_and_confirm():
 @pytest.mark.skipif(not HAS_QT, reason='PySide6 unavailable in sandbox')
 def test_segment_editor_status_workflow_and_bulk_selection():
     os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-    from PySide6.QtCore import QItemSelectionModel
     from PySide6.QtWidgets import QApplication
     from gamecat.gui.segment_editor import SegmentEditor
     from gamecat.models.segment import Segment, SegmentStatus

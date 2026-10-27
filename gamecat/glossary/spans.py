@@ -1,4 +1,4 @@
-"""Locate non-overlapping literal glossary terms in source strings."""
+"""Wyznaczanie nienakładających się wystąpień terminów glosariusza w Source."""
 from __future__ import annotations
 
 import re
@@ -7,10 +7,10 @@ from gamecat.models.glossary import GlossaryTerm
 
 
 def term_spans(text: str, terms: list[GlossaryTerm]) -> list[tuple[int, int, GlossaryTerm]]:
-    """Return clickable spans (Python string indices) using whole-word boundaries.
+    """Zwróć zakresy (indeksy napisu) terminów do podkreślenia w Source.
 
-    Prefer longer glossary phrases over shorter overlapping entries; use the
-    same punctuation-safe boundary semantics as `contains_term`.
+    Dłuższe frazy mają pierwszeństwo przed krótszymi, nakładającymi się
+    terminami; granice słów działają tak samo jak w :func:`contains_term`.
     """
     result: list[tuple[int, int, GlossaryTerm]] = []
     occupied = [False] * len(text)

@@ -1,13 +1,16 @@
+"""Model segmentu (jednostki tłumaczenia) i statusów workflow."""
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
 
 def _now() -> datetime:
+    """Zwróć bieżący czas UTC (domyślna wartość pól dat)."""
     return datetime.now(timezone.utc)
 
 
 class SegmentStatus(str, Enum):
+    """Statusy workflow segmentu: nowy, przetłumaczony, zrecenzowany, zatwierdzony."""
     NEW = "NEW"
     TRANSLATED = "TRANSLATED"
     REVIEWED = "REVIEWED"
@@ -16,7 +19,11 @@ class SegmentStatus(str, Enum):
 
 @dataclass(slots=True)
 class Segment:
-    """Single source/target translation unit."""
+    """Pojedyncza jednostka tłumaczenia: tekst źródłowy (Source) i tłumaczenie (Target).
+
+    Pola ``target`` i ``status`` są właściwościami (``@property``) z setterami,
+    które walidują typ i wartość oraz aktualizują znacznik ``updated_at``.
+    """
     source: str
     position: int
     key: str | None = None
@@ -34,6 +41,7 @@ class Segment:
                  comment: str = "", id: int | None = None, project_id: int | None = None,
                  created_at: datetime | None = None, updated_at: datetime | None = None,
                  ai_generated: bool = False):
+        """Utwórz segment; Target i status przechodzą przez walidujące settery."""
         self.source = source
         self.position = position
         self.key = key
@@ -50,11 +58,17 @@ class Segment:
 
     @property
     def target(self) -> str:
-        """Translated text."""
+        """Tekst tłumaczenia (Target)."""
         return self._target
 
     @target.setter
     def target(self, value: str) -> None:
+        """Ustaw tłumaczenie po sprawdzeniu typu.
+
+        Ręczna zmiana usuwa oznaczenie pochodzenia z AI i aktualizuje ``updated_at``.
+
+        :raises TypeError: gdy wartość nie jest napisem.
+        """
         if not isinstance(value, str):
             raise TypeError("target must be a string")
         self._target = value
@@ -63,11 +77,15 @@ class Segment:
 
     @property
     def status(self) -> SegmentStatus:
-        """Workflow status."""
+        """Status workflow segmentu."""
         return self._status
 
     @status.setter
     def status(self, value: SegmentStatus | str) -> None:
+        """Ustaw status, akceptując ``SegmentStatus`` lub jego nazwę tekstową.
+
+        :raises ValueError: gdy nazwa statusu jest nieznana.
+        """
         try:
             self._status = value if isinstance(value, SegmentStatus) else SegmentStatus(value)
         except ValueError as exc:

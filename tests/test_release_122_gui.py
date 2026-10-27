@@ -1,4 +1,4 @@
-"""Interaction regressions exercised with offscreen Qt when PySide6 is available."""
+"""Testy regresyjne interakcji GUI w trybie offscreen (gdy dostępny jest PySide6)."""
 import importlib.util
 import os
 import pytest

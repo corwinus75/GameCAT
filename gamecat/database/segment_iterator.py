@@ -36,6 +36,10 @@ class SegmentBatchIterator:
         row_factory: Callable[[sqlite3.Row], Segment],
         batch_size: int = 500,
     ) -> None:
+        """Przygotuj iterator; pierwsza partia jest pobierana leniwie przy pierwszym ``next()``.
+
+        :raises ValueError: gdy *batch_size* < 1.
+        """
         if batch_size < 1:
             raise ValueError('batch_size must be >= 1')
         self._connection = connection
@@ -48,9 +52,14 @@ class SegmentBatchIterator:
         self.batches_fetched = 0
 
     def __iter__(self) -> SegmentBatchIterator:
+        """Zwróć samego siebie – iterator jest jednorazowy."""
         return self
 
     def __next__(self) -> Segment:
+        """Zwróć kolejny segment, w razie potrzeby pobierając następną partię.
+
+        :raises StopIteration: po wyczerpaniu segmentów projektu.
+        """
         if not self._buffer:
             if self._exhausted:
                 raise StopIteration
@@ -61,6 +70,7 @@ class SegmentBatchIterator:
         return self._buffer.popleft()
 
     def _fetch_batch(self) -> None:
+        """Pobierz kolejną partię za ostatnim kluczem ``(position, id)`` w osobnej transakcji."""
         position, segment_id = self._last_key
         with self._connection:
             rows = self._connection.fetchall(

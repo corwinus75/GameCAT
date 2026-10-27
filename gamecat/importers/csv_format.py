@@ -1,8 +1,8 @@
-"""Shared CSV dialect and header discovery for source and translation imports.
+"""Wspólne rozpoznawanie dialektu i nagłówków CSV dla importu źródeł i tłumaczeń.
 
-The separator is inferred from the *header record*, not from arbitrary commas in
-localization text.  In particular, ``Id;Loca`` is a two-column CSV, even when
-many Source values contain prose commas or escaped ``\\n`` markers.
+Separator jest ustalany na podstawie *rekordu nagłówka*, a nie przypadkowych
+przecinków w tekście lokalizacji. ``Id;Loca`` to więc CSV z dwiema kolumnami,
+nawet jeśli wartości Source zawierają przecinki lub sekwencje ``\\n``.
 """
 from __future__ import annotations
 
@@ -14,7 +14,10 @@ DELIMITERS = (',', ';', '\t', '|')
 
 
 def detect_csv_delimiter(path: Path) -> str:
-    """Detect a CSV separator using the first logical (possibly quoted) record."""
+    """Rozpoznaj separator (``,``, ``;``, tab, ``|``) na podstawie pierwszego rekordu.
+
+    :raises ValueError: gdy plik jest pusty.
+    """
     with path.open('r', encoding='utf-8-sig', newline='') as handle:
         sample = handle.read(65536)
     if not sample.strip():
@@ -43,7 +46,10 @@ def detect_csv_delimiter(path: Path) -> str:
 
 
 def read_csv_headers(path: Path) -> list[str]:
-    """Get the same column names as the importer, including for BOM files."""
+    """Odczytaj nazwy kolumn tak samo jak importer (również dla plików z BOM).
+
+    :raises ValueError: pusty plik, puste lub powtórzone nazwy kolumn.
+    """
     with path.open('r', encoding='utf-8-sig', newline='') as handle:
         reader = csv.reader(handle, delimiter=detect_csv_delimiter(path))
         try:
@@ -60,7 +66,13 @@ def read_csv_headers(path: Path) -> list[str]:
 
 
 def suggest_source_columns(fields: list[str]) -> tuple[str | None, str, str | None]:
-    """Suggest roles from headers, without inventing an ID column for keyless CSV."""
+    """Zaproponuj kolumny klucza, Source i Target na podstawie nagłówków.
+
+    Dla pliku bez znanej kolumny ID nie jest ona wymyślana – segmenty są wtedy
+    identyfikowane pozycją.
+
+    :raises ValueError: gdy nie da się ustalić kolumny Source.
+    """
     if not fields:
         raise ValueError('Import CSV wymaga nagłówka z tekstem źródłowym.')
     lower = {field.strip().casefold(): field for field in fields}

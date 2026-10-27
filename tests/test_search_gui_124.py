@@ -1,4 +1,4 @@
-"""GUI tests for debounced filtering and virtual row rendering (requires Qt)."""
+"""Testy GUI opóźnionego filtrowania i wirtualnej listy segmentów (wymagają Qt)."""
 from __future__ import annotations
 
 import importlib.util

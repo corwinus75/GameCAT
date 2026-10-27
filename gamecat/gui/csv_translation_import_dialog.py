@@ -1,3 +1,4 @@
+"""Okno mapowania kolumn CSV przy imporcie samych tłumaczeń."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,11 +9,12 @@ from gamecat.gui.csv_import_dialog import CsvImportDialog
 
 
 class CsvTranslationImportDialog(QDialog):
-    """Map a CSV translation file to an optional key and required Target column."""
+    """Pozwala wskazać opcjonalną kolumnę klucza i wymaganą kolumnę Target."""
 
     NO_KEY = '(kolejność wierszy)'
 
     def __init__(self, path: Path, parent=None):
+        """Wczytaj nagłówki pliku i zaproponuj kolumny klucza oraz Target."""
         super().__init__(parent)
         self.setWindowTitle('Import tłumaczenia z CSV')
         fields = CsvImportDialog._read_fields(path)
@@ -38,5 +40,6 @@ class CsvTranslationImportDialog(QDialog):
         layout.addRow(buttons)
 
     def columns(self) -> tuple[str | None, str]:
+        """Zwróć wybrane kolumny (klucz lub ``None``, Target)."""
         key = self.key_combo.currentText()
         return (None if key == self.NO_KEY else key, self.target_combo.currentText())

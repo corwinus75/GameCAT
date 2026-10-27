@@ -1,4 +1,4 @@
-"""Qt regression tests; skipped when optional PySide6 is not installed."""
+"""Testy regresyjne Qt; pomijane, gdy PySide6 nie jest zainstalowany."""
 from __future__ import annotations
 
 import importlib.util

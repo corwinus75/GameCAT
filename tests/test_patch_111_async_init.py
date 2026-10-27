@@ -20,7 +20,7 @@ EXPECTED_DEFAULTS = {
 
 
 def test_main_window_initializes_all_async_fields_before_connecting_signals():
-    """A newly constructed window must support TM/QA updates and closing."""
+    """Nowo utworzone okno musi obsługiwać aktualizacje TM/QA i zamknięcie."""
     module = ast.parse(GUI_FILE.read_text(encoding='utf-8'))
     cls = next(n for n in module.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow')
     constructor = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '__init__')

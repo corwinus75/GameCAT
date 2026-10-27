@@ -1,8 +1,8 @@
-"""Reusable wrapping configuration for text-heavy Qt list views.
+"""Konfiguracja zawijania tekstu dla list Qt z długimi wpisami.
 
-Qt's QListWidget.setWordWrap(True) affects painting, but alone it does not
-reliably enlarge the height of a row. The size-hint delegate ensures long
-suggestions, QA messages and history entries remain readable in narrow docks.
+Samo ``QListWidget.setWordWrap(True)`` nie przelicza wysokości wierszy po
+zmianie szerokości panelu; delegat poniżej liczy rozmiar dla aktualnej
+szerokości widoku.
 """
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ from PySide6.QtWidgets import QListView, QListWidget, QStyledItemDelegate, QStyl
 
 
 class WrappingItemDelegate(QStyledItemDelegate):
-    """Size list rows to their *wrapped* text at the current viewport width."""
+    """Delegat ustalający wysokość wiersza na podstawie *zawiniętego* tekstu."""
 
     def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
+        """Zwróć rozmiar wiersza dla tekstu zawiniętego do bieżącej szerokości widoku."""
         configured = QStyleOptionViewItem(option)
         self.initStyleOption(configured, index)
         result = super().sizeHint(option, index)
@@ -34,7 +35,7 @@ class WrappingItemDelegate(QStyledItemDelegate):
 
 
 def enable_list_word_wrap(widget: QListWidget) -> None:
-    """Enable full-text wrapping and reflow when a dock/panel is resized."""
+    """Włącz pełne zawijanie tekstu i przeliczanie wierszy po zmianie rozmiaru panelu."""
     widget.setWordWrap(True)
     widget.setTextElideMode(Qt.TextElideMode.ElideNone)
     widget.setUniformItemSizes(False)

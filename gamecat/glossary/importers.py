@@ -1,3 +1,4 @@
+"""Import glosariusza z CSV i JSON ze scalaniem z istniejącymi terminami."""
 from __future__ import annotations
 
 import csv
@@ -12,6 +13,7 @@ from gamecat.models.glossary import GlossaryTerm
 
 @dataclass(frozen=True, slots=True)
 class GlossaryImportResult:
+    """Podsumowanie importu: nowe terminy, nowe warianty, duplikaty i błędne wiersze."""
     new_terms: int = 0
     new_variants: int = 0
     duplicates: int = 0
@@ -19,6 +21,10 @@ class GlossaryImportResult:
 
 
 def _parse_bool(value: Any) -> bool:
+    """Zinterpretuj wartość logiczną z pliku (``true``/``1``/``tak`` itp.).
+
+    :raises ValueError: gdy wartość nie jest rozpoznawalna.
+    """
     if isinstance(value, bool):
         return value
     text = str(value or '').strip().casefold()
@@ -30,6 +36,7 @@ def _parse_bool(value: Any) -> bool:
 
 
 def _aggregate(rows: list[tuple[str, str, str, bool]]) -> tuple[list[GlossaryTerm], int]:
+    """Pogrupuj wiersze według terminu źródłowego; zwróć terminy i liczbę duplikatów w pliku."""
     groups: dict[tuple[str, bool], dict[str, Any]] = {}
     duplicates = 0
     for source, target, description, case_sensitive in rows:
@@ -49,7 +56,13 @@ def _aggregate(rows: list[tuple[str, str, str, bool]]) -> tuple[list[GlossaryTer
 
 
 def import_glossary_csv(path: Path, repository: GlossaryRepository, project_id: int) -> GlossaryImportResult:
-    """Merge a canonical CSV glossary into one project."""
+    """Scal glosariusz CSV (kolumny ``source``, ``target``) z glosariuszem projektu.
+
+    Wiersze bez terminu lub z błędną wartością logiczną są liczone jako błędne
+    i pomijane.
+
+    :raises ValueError: brak wymaganych kolumn.
+    """
     rows: list[tuple[str, str, str, bool]] = []
     invalid = 0
     with path.open('r', encoding='utf-8-sig', newline='') as handle:
@@ -74,7 +87,10 @@ def import_glossary_csv(path: Path, repository: GlossaryRepository, project_id: 
 
 
 def import_glossary_json(path: Path, repository: GlossaryRepository, project_id: int) -> GlossaryImportResult:
-    """Merge a canonical JSON glossary into one project."""
+    """Scal glosariusz JSON (lista obiektów ``source``/``targets``) z glosariuszem projektu.
+
+    :raises ValueError: nieprawidłowa struktura pliku.
+    """
     payload = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(payload, list):
         raise ValueError('JSON glossary root must be a list')

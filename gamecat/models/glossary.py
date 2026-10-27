@@ -1,3 +1,4 @@
+"""Modele glosariusza projektu."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -5,7 +6,7 @@ from dataclasses import dataclass, field
 
 @dataclass(slots=True)
 class GlossaryEntry:
-    """Legacy flat glossary row kept for 0.6 compatibility during migration."""
+    """Płaski wpis glosariusza w formacie 0.6, zachowany dla zgodności i migracji."""
 
     source_term: str
     target_term: str
@@ -17,7 +18,7 @@ class GlossaryEntry:
 
 @dataclass(slots=True)
 class GlossaryTerm:
-    """Project glossary term with one or more equivalent target variants."""
+    """Termin glosariusza z jednym lub wieloma równorzędnymi wariantami tłumaczenia."""
 
     source_term: str
     targets: list[str] = field(default_factory=list)
@@ -27,6 +28,10 @@ class GlossaryTerm:
     project_id: int | None = None
 
     def __post_init__(self) -> None:
+        """Znormalizuj termin: usuń spacje brzegowe i duplikaty wariantów.
+
+        :raises ValueError: pusty termin, pusty wariant lub brak wariantów.
+        """
         self.source_term = self.source_term.strip()
         self.description = self.description.strip()
         if not self.source_term:

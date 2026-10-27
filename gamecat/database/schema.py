@@ -1,3 +1,4 @@
+"""Schemat bazy SQLite oraz idempotentne migracje kolejnych wersji."""
 import sqlite3
 from pathlib import Path
 
@@ -18,7 +19,11 @@ CREATE TABLE IF NOT EXISTS tm_project_settings (
 """
 
 def backup_duplicate_tm(connection, path: Path) -> Path | None:
-    """Back up legacy TM before the first deduplication; never overwrite a backup."""
+    """Przed pierwszą deduplikacją TM wykonaj kopię bazy obok pliku.
+
+    Istniejąca kopia nie jest nadpisywana. Zwraca ścieżkę kopii albo ``None``,
+    gdy kopia nie była potrzebna.
+    """
     row = connection.fetchone(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='translation_memory'"
     )
@@ -42,10 +47,10 @@ def backup_duplicate_tm(connection, path: Path) -> Path | None:
 
 
 def migrate_tm_indexes(connection: sqlite3.Connection) -> None:
-    """Remove legacy duplicate bilingual pairs, then enforce fast and unique lookups.
+    """Usuń zduplikowane pary z dawnych wersji i utwórz indeksy TM.
 
-    Keep the lowest ``id`` (the earliest inserted entry) including its origin.
-    The migration is repeatable and runs inside a transaction.
+    Z duplikatów zostaje wiersz o najniższym ``id``; indeks UNIQUE chroni
+    przed ponownym powstaniem duplikatów, a indeks języków przyspiesza wyszukiwanie.
     """
     with connection:
         indexes = {row['name'] for row in connection.fetchall("PRAGMA index_list('translation_memory')")}
@@ -65,6 +70,7 @@ def migrate_tm_indexes(connection: sqlite3.Connection) -> None:
 
 
 def initialize_tm_storage(connection: sqlite3.Connection) -> None:
+    """Utwórz tabelę i indeksy pamięci tłumaczeniowej (również w zewnętrznej bazie TM)."""
     connection.executescript(_TM_STORAGE_SCHEMA)
     migrate_tm_indexes(connection)
 
@@ -131,7 +137,7 @@ CREATE TABLE IF NOT EXISTS ai_project_settings (
 
 
 def migrate_ai_schema(connection: sqlite3.Connection) -> None:
-    """Idempotent migration; never removes existing translation data."""
+    """Idempotentnie utwórz tabele ustawień AI; nigdy nie usuwa danych tłumaczeń."""
     with connection:
         columns = {row['name'] for row in connection.fetchall('PRAGMA table_info(segments)')}
         if 'ai_generated' not in columns:
@@ -150,7 +156,7 @@ CREATE TABLE IF NOT EXISTS project_format_profiles (
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """Create database objects and migrate the project glossary to schema 0.7."""
+    """Utwórz wszystkie obiekty bazy i wykonaj migracje (glosariusz 0.7, TM, AI, profile)."""
     connection.executescript(_SCHEMA)
     migrate_tm_indexes(connection)
     connection.executescript(_SEGMENT_HISTORY_SCHEMA)

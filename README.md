@@ -1,367 +1,124 @@
 # GameCAT
 
-### GameCAT 1.2.5 — naprawa importu CSV z lokalizacji gier
+GameCAT to desktopowy program CAT (*Computer-Assisted Translation*) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**. Tłumacz importuje pliki gry (TXT, CSV, TSV, XLSX, JSON, XML), tłumaczy segmenty w edytorze Source/Target z podpowiedziami pamięci tłumaczeniowej (TM) i glosariusza, sprawdza jakość (QA) i eksportuje wynik – także do kopii oryginalnego pliku gry z zachowaniem jego struktury.
 
-- Importer CSV automatycznie wykrywa separator `,`, `;`, tabulator lub `|` na podstawie nagłówka pliku, z zachowaniem cytowanych wartości i oryginalnych sekwencji `\n`.
-- Okno mapowania rozpoznaje również `Id` i `Loca`, a przy braku kolumny ID pozwala wybrać brak klucza. Przykładowy plik `com.ownedbygravity.fg2.invasion.EN.csv` importuje 7 segmentów bez utraty danych.
-- Import tłumaczeń i eksport do oryginalnego szablonu CSV używają tego samego rozpoznanego separatora.
-- [Opis poprawki i instrukcja importu](docs/releases/1.2.5.md).
+Wersja: **1.2.6** · Python 3.12+ · PySide6 · SQLite
 
-### GameCAT 1.2.4 — wydajne wyszukiwanie w dużych projektach
-
-- Filtrowanie dużych projektów (>1500 segmentów) działa w tle z opóźnieniem 180 ms od ostatniego wpisanego znaku; spóźnione wyniki są anulowane lub odrzucane.
-- Listę segmentów przeniesiono z `QListWidget` na wirtualny `QListView` + `QAbstractListModel`. Odtąd GUI nie tworzy od nowa osobnego obiektu `QListWidgetItem` dla każdej linii po każdym wpisanym znaku.
-- Indeks Source/Target przyspiesza wyszukiwanie bez regex; pozostają wszystkie filtry, sortowania, regex, nawigacja, statusy i niezapisane szkice.
-- Nowy skrypt `python -m benchmarks.search_124 --segments 50000` mierzy algorytm filtrowania (bez pomiaru renderowania Qt).
-- [Szczegóły, ograniczenia i testy 1.2.4](docs/releases/1.2.4.md).
-
-
-### GameCAT 1.2.3 — zawijanie długich wpisów w panelach
-
-- Historia, TM, QA, glosariusz i OpenAI zawijają długie teksty oraz dopasowują wysokości wierszy po zmianie szerokości panelu.
-- W pełnym glosariuszu zawijane są również komórki tabeli; wyniki wsadu OpenAI pokazują cały tekst Source.
-- [Szczegóły i testy wydania](docs/releases/1.2.3.md).
-
-### GameCAT 1.2.2 — historia zatwierdzeń i glosariusz kontekstowy
-
-- Ręczny Target/komentarz są **szkicami w RAM**, nie podlegają autosave. Przycisk **Zapisz** utrwala `TRANSLATED`, **Zatwierdź** — `REVIEWED`, **LQA** — `APPROVED`; każda taka akcja dopisuje migawkę i datę do historii wybranego segmentu w SQLite.
-- Panele QA, TM, Glosariusz, Historia i OpenAI są domyślnie pogrupowane jako zakładki. Pełny słownik otwiera się w osobnym oknie, a karta glosariusza pokazuje wyłącznie terminy występujące w bieżącym Source.
-- Terminy w Source są podkreślone i klikalne; wstawiają wybrany wariant do Target bez automatycznego zapisu.
-- [Dokładne zasady, migracja, scenariusze testów i etapy commitów](docs/releases/1.2.2.md).
-
-GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
-
-### Poprawka 1.1.2 — segmenty w sugestiach TM
-
-- Sugestie TM pokazują **ID segmentów i pozycje w bieżącym projekcie** odpowiadające dokładnie parze Source/Target. Przy wielu identycznych wpisach w projekcie wskazywane są wszystkie segmenty (w razie długiej listy — pełna lista w podpowiedzi).
-- Sugestia stanowiąca dokładną parę Source/Target zaznaczonego segmentu otrzymuje etykietę **BIEŻĄCY** i pogrubienie, a podobieństwo pozostaje prawidłowe (100%, nie sztuczne 101%). Dopasowanie wyłącznie Source nie jest błędnie uznawane za ten sam segment.
-- Wpisy TM bez odpowiednika w bieżącym projekcie otrzymują oznaczenie „brak ID segmentu”; **TM ID** jest wyświetlane osobno i nie jest utożsamiane z ID segmentu.
-- Zmiany Target odświeżają oznaczenie z opóźnieniem podczas pisania, bez publikowania nieaktualnych wyników. Nie zmieniono SQLite; szczegóły: [1.1.2](docs/releases/1.1.2.md).
-
-### Poprawka 1.1.1 — inicjalizacja asynchronicznego GUI
-
-- Usunięto `AttributeError: 'MainWindow' object has no attribute '_tm_generation'` przy zmianie progu sugestii TM.
-- Inicjalizowane są liczniki generacji QA/TM/filtrów i zmiany treści, wskaźniki oczekujących zadań, flaga zamykania oraz stan nawigacji po błędach QA. Chroni to także wybór segmentu, skanowanie QA i zamykanie okna.
-- Nie zmieniono schematu SQLite ani konfiguracji TM/OpenAI. Szczegóły: [1.1.1](docs/releases/1.1.1.md).
-
-### Nowości 1.1 — responsywność, architektura i kontekst
-
-- GUI korzysta z fasady `ProjectService`, zamiast bezpośrednio z repozytoriów segmentów/TM.
-- Sugestie fuzzy TM i pełne skany filtrów QA/TM wykonywane w tle z odrzucaniem nieaktualnych odpowiedzi. TM ma cache z unieważnianiem po zmianach magazynu lub zawartości.
-- Eksport z uporządkowanego iteratora SQLite: TXT, CSV, TSV i JSON zapisują dane strumieniowo; QA całego projektu nie materializuje pełnej listy segmentów.
-- Edytowalne pole **Kontekst / komentarz** pod Target; `FormatProfile.comment_field` mapuje komentarze z CSV/TSV/XLSX/JSON/XML. Komentarze pozostają w SQLite i nie zmieniają statusu workflow.
-- [Pełny opis 1.1 i lista testów ręcznych](docs/releases/1.1.md).
-
-## Funkcje bieżącej wersji
-
-- projekty tłumaczeniowe i segmenty Source/Target,
-- wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
-- SQLite,
-- import i eksport TXT/CSV/JSON/TSV/XLSX/XML oraz mapowanie pól i eksport według oryginalnego szablonu,
-- workflow statusów `NEW`, `TRANSLATED`, `REVIEWED`, `APPROVED` z ręczną i masową zmianą, filtrami, skrótami i licznikiem postępu,
-- QA placeholderów, tagów, spacji i terminologii,
-- projektowy glosariusz z wieloma równorzędnymi wariantami, edycją GUI oraz importem/eksportem CSV+JSON,
-- Translation Memory z fuzzy matching, możliwością korzystania z osobnej bazy SQLite,
-  importem/eksportem CSV+JSON, progiem dopasowania i automatycznym dodawaniem zatwierdzonych segmentów,
-- analiza projektu względem TM (progi 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak) sekwencyjnie, w wątkach lub w procesach, z wsadową pretranslacją dopasowań ≥50% (domyślnie i bez potwierdzenia tylko 100%),
-- zadania I/O przez `ThreadPoolExecutor`,
-- kolejka zapisów `SaveQueue` dla operacji API/wsadowych; ręczna edycja używa wyłącznie jawnego zapisu do historii,
-- GUI PySide6,
-- benchmark GIL: sequential / threads / processes.
-
-## Wymagania
-
-- Python 3.12+
-- PySide6
-- pytest
-- matplotlib
-- openai oraz keyring (funkcje OpenAI API z wersji 0.10)
-
-Instalacja:
+## Uruchomienie
 
 ```bash
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
+.venv\Scripts\activate            # Linux/macOS: source .venv/bin/activate
 python -m pip install -r requirements.txt
 python main.py
 ```
 
-Testy:
+Testy (pytest, 257 testów; testy GUI są pomijane, gdy PySide6 nie jest dostępny):
 
 ```bash
-python -m pytest -v
+python -m pytest -q
 ```
 
-Benchmark (wyniki trafiają do `benchmarks/results.md`, `results.json` i `gil_benchmark.png`):
+Benchmark GIL (wyniki trafiają do `benchmarks/results.md`, `results.json` i `gil_benchmark.png`):
 
 ```bash
-python benchmarks/gil_benchmark.py --update-readme   # pełny pomiar + tabela w README
+python benchmarks/gil_benchmark.py --update-readme   # pełny pomiar (600 × 1200) + tabela w README
 python benchmarks/gil_benchmark.py --quick           # szybkie sprawdzenie działania
 ```
 
-Dane testowe: przykładowe pliki w `sample_data/`, a dane do benchmarku generuje deterministycznie `benchmarks/dataset.py`.
+Dane testowe znajdują się w `sample_data/` (pliki źródłowe we wszystkich formatach, profile mapowania, glosariusz i TM). Dane do benchmarku generuje deterministycznie `benchmarks/dataset.py`.
+
+## Funkcje
+
+- **Projekty w SQLite** – jeden plik `.sqlite` może zawierać kilka projektów; przy otwieraniu wybiera się projekt.
+- **Import i eksport** – TXT/CSV/JSON oraz TSV/XLSX/XML i zagnieżdżony JSON z konfigurowalnym profilem mapowania pól (klucz, Source, Target, komentarz). CSV rozpoznaje separator `,` `;` tab `|`. Eksport „według oryginalnego szablonu” zapisuje tłumaczenia w kopii pliku gry, nie zmieniając pozostałych pól.
+- **Edytor segmentów** – szkice Target i komentarza są trzymane w pamięci; **Zapisz** utrwala status `TRANSLATED`, **Zatwierdź** – `REVIEWED`, **LQA** – `APPROVED`. Każda akcja trafia do historii segmentu.
+- **Workflow statusów** `NEW → TRANSLATED → REVIEWED → APPROVED` z masową zmianą, filtrami i licznikiem postępu.
+- **Wyszukiwanie** w Source/Target (także regex), filtry QA/TM, sortowanie i masowa zamiana w Target z podglądem. W dużych projektach filtrowanie działa w tle na wirtualnej liście.
+- **QA** – brakujące/nadmiarowe placeholdery i tagi, puste tłumaczenie, `Source == Target`, nowe linie, spacje, wymagane terminy z glosariusza; skan całego projektu z nawigacją do błędów.
+- **Glosariusz** z wieloma wariantami tłumaczenia; terminy w Source są podkreślone i klikalne; import/eksport CSV i JSON.
+- **Pamięć tłumaczeniowa** – sugestie fuzzy z progiem, osobna (zewnętrzna) baza TM, import/eksport CSV i JSON, automatyczne dodawanie zatwierdzonych segmentów.
+- **Analiza projektu względem TM** w progach 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak – sekwencyjnie, w wątkach lub w procesach – z pretranslacją pustych segmentów.
+- **OpenAI API (opcjonalnie)** – tłumaczenie pojedyncze i wsadowe z limitem kosztu; propozycje są sprawdzane regułami QA. Klucz API jest przechowywany w systemowym magazynie poświadczeń, nigdy w pliku projektu.
+
+Najważniejsze skróty: `Ctrl+S` zapisz segment · `Ctrl+Enter` zapisz segment (jak przycisk Zapisz) · `Alt+↓/↑` następny/poprzedni segment · `Ctrl+1…4` status · `Ctrl+F` szukaj · `Ctrl+H` zamień w Target · `F8 / Shift+F8` następny/poprzedni błąd QA · `Ctrl+Alt+↓/↑` następny/poprzedni bez tłumaczenia · `Ctrl+Shift+Q` QA projektu · `Ctrl+Shift+A` analiza TM · `Ctrl+Shift+T` tłumaczenie AI.
+
+## Struktura projektu
+
+| Katalog | Zawartość |
+|---|---|
+| `gamecat/models/` | modele domenowe: projekt, segment, termin glosariusza, wpis TM |
+| `gamecat/database/` | połączenie SQLite bezpieczne wątkowo, schemat i migracje, repozytoria, iterator segmentów |
+| `gamecat/importers/`, `exporters/`, `localization/` | importery-generatory, eksportery, profile formatów, XLSX, eksport do szablonu |
+| `gamecat/services/` | fasada `ProjectService` (`project_service.py`) złożona z mixinów w `services/project/` |
+| `gamecat/qa/`, `glossary/`, `tm/`, `search/`, `workflow/` | reguły QA, glosariusz, podobieństwo i analiza TM, wyszukiwanie, statusy |
+| `gamecat/concurrency/` | kolejka zapisów w tle (`SaveQueue`) i pula wątków I/O |
+| `gamecat/gui/` | interfejs PySide6; okno główne `main_window.py` złożone z mixinów w `gui/window/` |
+| `gamecat/ai/` | opcjonalna integracja z OpenAI API |
+| `benchmarks/` | benchmark GIL i generator danych |
+| `tests/` | testy jednostkowe, integracyjne i GUI (pytest) |
 
 ## Mapowanie wymagań zaliczeniowych
 
 | Zagadnienie | Gdzie w kodzie | Gdzie działa w programie |
 |---|---|---|
-| Dekorator funkcji + `functools.wraps` | `gamecat/utils/decorators.py → measure_time` | czasy importu, eksportu, QA projektu i analizy TM w logu `gamecat.timing` (`ProjectService`) |
-| Dekorator z parametrami | `gamecat/utils/decorators.py → retry(attempts, delay, exceptions, when)` | `SaveQueue._save_batch` – ponowienie zapisu, gdy plik bazy blokuje inny proces (`database is locked`) |
-| Dekorator metody korzystający z `self` | `gamecat/utils/decorators.py → requires_project` | metody `MainWindow` wymagające otwartego projektu |
-| `@property` z setterem | `gamecat/models/segment.py → Segment.target`, `Segment.status` (walidacja statusu) | każda zmiana tłumaczenia/statusu |
-| `@staticmethod` | `SaveQueue._snapshot`, `SaveQueue._coalesce`, `ProjectService._export_file` | autosave, eksport |
-| Własny iterator (`__iter__`, `__next__`) | `gamecat/database/segment_iterator.py → SegmentBatchIterator` | QA całego projektu, eksport, analiza TM – segmenty czytane z SQLite partiami |
-| Generatory (`yield`) | `gamecat/importers/*.py`, `benchmarks/dataset.py → _sentences` | strumieniowy import TXT/CSV/JSON |
-| Wyrażenia generujące | `ProjectService._import_file`, `ProjectService.analyze_project_tm`, `tm/analysis.py` | import w jednej transakcji, przygotowanie danych do analizy |
-| Regex z grupami nazwanymi | `gamecat/qa/patterns.py → BRACE_RE`, `PRINTF_OR_TAG_RE` | QA placeholderów i tagów |
-| Regex (tokenizacja) | `gamecat/tm/similarity.py → _WORD_RE`, `tm/analysis.py → _WORD_RE` | fuzzy matching TM, liczenie słów w analizie |
-| Wątki + `Queue` / `Lock` / `RLock` | `gamecat/concurrency/save_queue.py → SaveQueue`, `concurrency/io_workers.py → IOWorkerPool`, `database/connection.py → ThreadSafeConnection` | autosave w tle, import/eksport bez blokowania GUI |
-| Procesy | `gamecat/tm/analysis.py → analyze()` (`ProcessPoolExecutor`, kontekst `spawn`, `initializer`) | **TM → Analiza projektu względem TM** (`Ctrl+Shift+A`) |
+| Dekorator funkcji + `functools.wraps` | `gamecat/utils/decorators.py` → `measure_time` | czas importu, eksportu, QA i analizy TM w logu `gamecat.timing` (`services/project/files.py`, `tm.py`, `quality.py`) |
+| Dekorator z parametrami | `gamecat/utils/decorators.py` → `retry(attempts, delay, exceptions, when)` | `concurrency/save_queue.py` → `SaveQueue._save_batch`: ponowienie zapisu, gdy plik bazy blokuje inny proces |
+| Dekorator funkcji i dekorator klasy | `gamecat/database/repositories.py` → `database_errors`, `repository_errors` | błędy `sqlite3` w repozytoriach zamieniane na `DatabaseError` |
+| Dekorator metody korzystający z `self` | `gamecat/utils/decorators.py` → `requires_project` | metody okna głównego wymagające otwartego projektu (`gui/window/*.py`) |
+| `@property` z setterem | `gamecat/models/segment.py` → `Segment.target`, `Segment.status` | walidacja każdej zmiany tłumaczenia i statusu |
+| `@classmethod` | `localization/profiles.py` → `FormatProfile.from_dict`, `workflow/status.py` → `ProjectProgress.from_counts`, `search/index.py` → `SearchRecord.from_segment` | alternatywne konstruktory |
+| `@staticmethod` | `concurrency/save_queue.py` → `SaveQueue._snapshot`, `_coalesce`; `services/project/files.py` → `_export_file` | autosave, eksport |
+| Własny iterator (`__iter__`, `__next__`) | `gamecat/database/segment_iterator.py` → `SegmentBatchIterator`; `services/project/files.py` → `_CountingIterator` | QA projektu, eksport i analiza TM czytają segmenty z SQLite partiami (keyset pagination); zliczanie eksportu bez listy w pamięci |
+| Funkcje-generatory (`yield`) | `gamecat/importers/*.py`, `localization/exchange.py` → `_read_*_source`, `benchmarks/dataset.py` → `_sentences` | strumieniowy import wszystkich formatów |
+| `yield from` | `localization/exchange.py` → `read_source`, `read_translations`; `qa/rules.py` → `iter_issues` | dyspozytor delegujący czytanie do generatora właściwego formatu; łączenie grup reguł QA w jeden strumień |
+| Wyrażenia generujące | `services/project/files.py` → `_import_file`; `services/project/tm.py` → `analyze_project_tm`, `sync_project_to_tm`; `database/segment_iterator.py` → `_fetch_batch` | import w jednej transakcji, przygotowanie danych do analizy |
+| Regex z grupami nazwanymi | `gamecat/qa/patterns.py` → `BRACE_RE`, `PRINTF_OR_TAG_RE` (`brace`, `printf`, `tag`) | QA placeholderów i tagów |
+| Regex – tokenizacja i wyszukiwanie | `tm/similarity.py` → `_WORD_RE`, `tm/analysis.py` → `_WORD_RE`, `glossary/matching.py` → `contains_term`, `search/operations.py` → `_regex` | fuzzy matching TM, liczenie słów, terminy glosariusza, wyszukiwanie regex |
+| Wątki + `Queue` / `Lock` / `RLock` / `Event` | `concurrency/save_queue.py` → `SaveQueue`; `concurrency/io_workers.py` → `IOWorkerPool`; `database/connection.py` → `ThreadSafeConnection`; `gui/segment_editor.py` → wyszukiwanie w tle z `Event` | autosave w tle, import/eksport bez blokowania GUI, anulowanie wyszukiwania |
+| Procesy | `gamecat/tm/analysis.py` → `analyze()` (`ProcessPoolExecutor`, kontekst `spawn`, `initializer`) | **TM → Analiza projektu względem TM** (`Ctrl+Shift+A`) |
 | Pomiar GIL | `benchmarks/gil_benchmark.py` | ta sama analiza TM: sekwencyjnie / wątki / procesy |
-| Zaawansowane wyszukiwanie i regex (0.9) | `gamecat/search/operations.py` → `filter_segments`, `preview_replacements` | filtry, zamiana Target, sortowanie |
-| GUI | `gamecat/gui/` | PySide6 |
-| Import/eksport lokalizacji 0.11 | `gamecat/localization/{profiles,exchange,xlsx}.py` | TSV/XLSX/XML, zagnieżdżony JSON, zachowanie struktury szablonu |
-| Eksport/import TM 0.8 | `gamecat/tm/exchange.py`, `ProjectService.import_tm_file` | transakcyjny import TM, eksport CSV/JSON |
 | Testy | `tests/` (pytest) | |
+| CLI | `benchmarks/gil_benchmark.py`, `benchmarks/search_124.py` (`argparse`) | |
 | Logging | `gamecat/logging_config.py` | plik `gamecat.log` |
-
-
-### Stabilizacja bazy i wielu projektów (1.0.2)
-
-- Gdy jeden plik SQLite zawiera więcej niż jeden projekt, okno otwierania pozwala wybrać konkretny projekt (nazwa, ID, języki).
-- Przypięta zewnętrzna TM ładowana jest **dla wybranego projektu**; błędne powiązanie innego projektu nie blokuje otwarcia poprawnego.
-- Wewnętrzna i zewnętrzna TM otrzymują indeks języków i indeks UNIQUE dla par `(source,target,source_language,target_language)`.
-- Przy migracji istniejących duplikatów zachowujemy wiersz o najniższym `id`; **przed deduplikacją** tworzony jest backup obok pliku `.sqlite.before-v1.0.2.bak`. Backup nie jest nadpisywany.
-- Błędy SQLite zgłaszane przez repozytoria przyjmują postać `DatabaseError` z oryginalnym wyjątkiem w `__cause__`. Ponawianie zapisu przy chwilowej blokadzie nadal działa.
-
-Szczegóły: [notatki wydania 1.0.2](docs/releases/1.0.2.md). Przed aktualizacją zalecane jest niezależne wykonanie kopii baz projektu i zewnętrznych pamięci TM.
-
-## Stabilizacja 1.0.1
-
-Wydanie poprawkowe zgodne z bazami SQLite 1.0.0 (bez migracji schematu):
-
-- Ręczna zmiana Target unieważnia status `REVIEWED`/`APPROVED` i ustawia `TRANSLATED`; pusty Target ma status `NEW`. Wprowadzenie identycznego tekstu nie zmienia statusu, a licznik postępu i oznaczenia listy odświeżają się automatycznie.
-- `ThreadSafeConnection`: każda instrukcja `execute` jest synchronizowana przez `RLock`. Zapytania zwracające wiersze w repozytoriach, migracjach i `ProjectService` używają `fetchone`/`fetchall` obejmujących blokadą **wykonanie oraz pobranie wyniku**. Zachowano pojedynczą transakcję pod `with connection`.
-- Panel sugestii TM respektuje próg podobieństwa zapisany w projekcie; nie używa już stałej wartości 45%.
-- Przełączenie na TM projektu nie resetuje instrukcji, modelu ani cen w panelu OpenAI. Reset ustawień AI pozostaje prawidłowy przy tworzeniu **nowego** projektu.
-- Dodano testy regresyjne logiki workflow, izolacji odczytów SQLite oraz metod GUI niezależnie od PySide6. Testy integracyjne Qt pozostają przygotowane do uruchomienia na komputerze z PySide6.
-
-Zobacz [notatki wydania 1.0.1](docs/releases/1.0.1.md).
-
-W ramach finalizacji poprawiono również bezpieczeństwo importu już przetłumaczonego pliku: nowy Target unieważnia poprzednie zatwierdzenie (`REVIEWED`/`APPROVED`), natomiast import identycznego tekstu nie odbiera statusu. Klucz OpenAI API nie należy do danych projektu.
-
-## Nowości w wersji 0.11
-
-Formaty TSV, XLSX, XML i konfigurowalne JSON oraz profile per projekt — szczegóły, przykłady i zasady bezpiecznego eksportu: **[Dokumentacja 0.11](docs/releases/0.11.md)**.
-
-## Integracja OpenAI API w wersji 0.10
-
-Instrukcje obsługi, API i kosztów: **[Dokumentacja 0.10](docs/releases/0.10.md)**.
-
-## Nowości w wersji 0.9
-
-Skróty: **Ctrl+F** wyszukiwanie, **Ctrl+H** zamiana w Target z podglądem, **F8 / Shift+F8** następny/poprzedni błąd QA, **Ctrl+Alt+strzałka dół/góra** następny/poprzedni segment bez tłumaczenia. Zaawansowane filtry działają łącznie. Szczegóły, zasady ochrony recenzji i zachowania masowego zastępowania: **[Dokumentacja 0.9](docs/releases/0.9.md)**.
-
-## Obsługa TM w wersji 0.8
-
-Dokładny opis formatu CSV/JSON i zasad bezpieczeństwa:
-**[Dokumentacja GameCAT 0.8](docs/releases/0.8.md)**.
-
-W menu **TM** można wskazać zewnętrzną bazę `.sqlite` lub powrócić do TM
-przechowywanej w pliku projektu. Każdy projekt zapamiętuje swoją aktywną
-bazę TM oraz minimalny próg sugestii w panelu TM (domyślnie 45%).
-Zmiana magazynu nie scala automatycznie ich zawartości — do przenoszenia par
-służą **Eksportuj TM** i **Importuj TM**. Pliki wymiany mogą zawierać wiele
-par językowych, lecz podpowiedzi i analiza projektu wybierają wyłącznie
-zgodną parę. Zatwierdzenie niepustego segmentu (`APPROVED`) dodaje jego
-parę Source/Target do aktywnego magazynu, bez duplikatów.
-
-Dla dużych zbiorów można włączyć **Analizę projektu względem TM** i wybrać
-próg pretranslacji (50–100%). Pretranslacja nie nadpisuje istniejącego
-Target i ustawia jedynie `TRANSLATED` dla wcześniej nowych segmentów.
-Propozycje fuzzy poniżej 100% wymagają ręcznej recenzji i QA.
-
-## Analiza projektu względem TM (od v0.5.1)
-
-**TM → Analiza projektu względem TM…** porównuje każdy segment projektu ze wszystkimi wpisami pamięci tłumaczeniowej dla pary językowej projektu i pokazuje liczbę segmentów oraz słów w progach dopasowania. W oknie można wybrać tryb wykonania (procesy, wątki, sekwencyjnie) i liczbę workerów, co pozwala porównać tryby bezpośrednio w programie. Przycisk **Wstaw dopasowania ≥X%** wpisuje tłumaczenia z TM do pustych segmentów. Domyślny próg 100% można obniżyć po potwierdzeniu ryzyka; istniejące tłumaczenia nie są nadpisywane.
-
-Analiza działa w wątku I/O, który uruchamia pulę procesów, więc GUI pozostaje responsywne. Pamięć tłumaczeniowa jest przekazywana do każdego procesu tylko raz, przez `initializer` puli; dopasowania dokładne są wyszukiwane słownikiem w O(1), a fuzzy matching liczony jest tylko dla pozostałych segmentów. Projekty mniejsze niż 200 segmentów są analizowane sekwencyjnie, bo start puli procesów kosztowałby więcej niż sama praca.
+| Wykres wyników | `benchmarks/gil_benchmark.py` → `save_plot` (matplotlib) | `benchmarks/gil_benchmark.png` |
 
 ## Wyniki benchmarku GIL
 
 <!-- BENCHMARK:START -->
 | Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |
 |---|---:|---:|---:|---:|
-| Sekwencyjnie | 0.260 | 0.237 | 0.269 | 1.00x |
-| Wątki | 0.244 | 0.233 | 0.264 | 1.06x |
-| Procesy | 1.152 | 1.139 | 1.223 | 0.23x |
+| Sekwencyjnie | 3.759 | 3.701 | 3.909 | 1.00x |
+| Wątki | 3.754 | 3.655 | 4.047 | 1.00x |
+| Procesy | 1.796 | 1.745 | 1.942 | 2.09x |
 
-Dane: 160 segmentów × 240 wpisów TM, 2 workerów, 3 powtórzeń (mediana), seed 2026.  
-Środowisko: Python 3.13.5 (CPython), Linux 6.18.55, 5 rdzeni logicznych, GIL włączony.
+Dane: 600 segmentów × 1200 wpisów TM, 22 workerów, 5 powtórzeń (mediana), seed 2026.  
+Środowisko: Python 3.14.0 (CPython), Windows 11, 22 rdzeni logicznych, GIL włączony.
 
 ![Wykres benchmarku](benchmarks/gil_benchmark.png)
 <!-- BENCHMARK:END -->
 
 ## Wnioski z benchmarku GIL
 
-Pomiar z wydania 1.0 dotyczy tej samej funkcji analizy Translation Memory dla trzech trybów: sekwencyjnego, `ThreadPoolExecutor` i `ProcessPoolExecutor`. Wszystkie tryby przeszły kontrolę identyczności wyników; wykonano rozgrzewkę i trzy rundy pomiarowe z rotacją kolejności. Dla 160 segmentów i 240 wpisów TM mediana wyniosła odpowiednio **0,260 s**, **0,244 s** i **1,152 s** (CPython 3.13.5, Linux, 2 workery). W tak małym zadaniu koszt uruchomienia procesów i przekazania danych jest większy od potencjalnego zysku; dlatego procesy osiągnęły tylko **0,23×** prędkości odniesienia. Minimalna różnica między wątkami a wykonaniem sekwencyjnym przy takich czasach nie dowodzi przyspieszenia pracy CPU przez wątki. Przy włączonym GIL w standardowym CPythonie jednocześnie wykonywać kod Pythona może tylko jeden wątek, więc do CPU-bound wybieramy procesy dopiero dla dostatecznie dużych zadań. **W pomiarze historycznym na Windows 11** z większym zestawem danych (600 × 1200) procesy osiągnęły **2,09×**, a wątki **1,00×**. Różnica nie jest sprzecznością: wydajność zależy od rozmiaru zadania, parametrów maszyny i narzutu komunikacji. Wątki w GameCAT pozostają właściwym wyborem dla I/O (import, eksport, autosave), a dla analizy TM aplikacja może wybrać procesy lub sekwencyjne wykonanie zależnie od wielkości projektu.
-
-Historyczne wyniki: [benchmark 0.5.1 / Windows](benchmarks/history_0.5.1_windows.md). Wynik 1.0: [tabela](benchmarks/results.md), [JSON](benchmarks/results.json), [wykres](benchmarks/gil_benchmark.png). Procedurę można powtórzyć komendą: `python benchmarks/gil_benchmark.py --segments 160 --tm 240 --repeats 3 --workers 2 --update-readme`. Większy zestaw jest opcjonalny i trwa dłużej.
+Pomiar dotyczy rzeczywistej operacji programu – analizy projektu względem TM, w której każdy segment jest porównywany z każdym wpisem pamięci funkcją podobieństwa napisaną w czystym Pythonie, czyli zadania typu CPU-bound. Wszystkie trzy tryby zwróciły identyczne wyniki, a pomiar obejmował rozgrzewkę, pięć rund z rotacją kolejności trybów i medianę czasu. Wątki nie dały żadnego przyspieszenia (1,00×): przy włączonym GIL w danej chwili tylko jeden wątek wykonuje kod bajtowy Pythona, więc 22 wątki liczyły po kolei. Procesy skróciły czas o ponad połowę (2,09×), bo każdy ma własny interpreter i własny GIL, a więc faktycznie korzysta z kilku rdzeni. Przyspieszenie jest dużo mniejsze niż liczba rdzeni, ponieważ czas obejmuje start puli procesów w trybie `spawn` i przekazanie danych przez pickle; dlatego TM trafia do procesów tylko raz, przez `initializer`. Z tego samego powodu projekty mniejsze niż 200 segmentów są analizowane sekwencyjnie – przy małej pracy narzut procesów przeważa nad zyskiem. Wątki pozostają w GameCAT właściwym narzędziem dla zadań I/O-bound: importu, eksportu, zapisów do SQLite i zapytań do OpenAI API. Na kompilacji free-threading (Python 3.13t/3.14t) wątki mogłyby przyspieszać także tę analizę, co można sprawdzić tym samym skryptem.
 
 ## Problemy napotkane podczas realizacji
 
-- **Wyścig przy zapisie do SQLite (v0.3).** Wątek autosave i wątek GUI korzystały ze wspólnego połączenia, co prowadziło do przeplatania się transakcji. Rozwiązaniem jest `ThreadSafeConnection`, które serializuje transakcje blokadą `RLock`.
-- **Zapis przy każdym naciśnięciu klawisza (v0.5).** Synchroniczny zapis spowalniał edytor. `SaveQueue` przenosi zapis do osobnego wątku i scala szybkie zmiany tego samego segmentu (debounce), a `flush()` wyznacza granicę trwałości przed QA, eksportem i zamknięciem projektu.
-- **Częściowy import.** Zapis każdego segmentu w osobnej transakcji był wolny, a błąd w połowie pliku zostawiał w bazie część danych. Import działa teraz w jednej transakcji, a import tłumaczeń najpierw dopasowuje wszystkie wiersze w pamięci i zapisuje je jednym `executemany`.
-- **Źle dobrana granulacja procesów.** Pierwsza wersja równoległego matchera tworzyła pulę procesów dla pojedynczego zapytania i przesyłała TM z każdym zadaniem; narzut startu procesów był większy niż zysk. Procesy opłacają się dopiero dla analizy całego projektu, z TM przekazaną raz przez `initializer`.
-- **Wiarygodność pomiarów.** Pierwszy benchmark mierzył tryby zawsze w tej samej kolejności i bez rozgrzewki, przez co wyniki potrafiły sugerować przyspieszenie wątków, sprzeczne z działaniem GIL. Obecna wersja rozgrzewa każdy tryb, rotuje kolejność i raportuje medianę.
+- **Wyścig przy zapisie do SQLite.** Wątek autosave i wątek GUI korzystały ze wspólnego połączenia, co prowadziło do przeplatania transakcji. Rozwiązaniem jest `ThreadSafeConnection`, które serializuje wywołania i całe transakcje blokadą `RLock`.
+- **Zapis przy każdym naciśnięciu klawisza.** Synchroniczny zapis spowalniał edytor. `SaveQueue` przenosi zapis do osobnego wątku i scala szybkie zmiany tego samego segmentu (debounce), a `flush()` wyznacza granicę trwałości przed QA, eksportem i zamknięciem projektu.
+- **Częściowy import.** Zapis segmentów w osobnych transakcjach był wolny, a błąd w połowie pliku zostawiał w bazie część danych. Import działa teraz w jednej transakcji, a generator importera jest konsumowany wewnątrz niej.
+- **Źle dobrana granulacja procesów.** Pierwsza wersja tworzyła pulę procesów dla pojedynczego zapytania i przesyłała TM z każdym zadaniem; narzut był większy niż zysk. Procesy opłacają się dopiero dla analizy całego projektu, z TM przekazaną raz przez `initializer`.
+- **Wiarygodność pomiarów.** Pierwszy benchmark mierzył tryby zawsze w tej samej kolejności i bez rozgrzewki, przez co wyniki potrafiły sugerować przyspieszenie wątków, sprzeczne z działaniem GIL. Obecna wersja rozgrzewa każdy tryb, sprawdza zgodność wyników, rotuje kolejność i raportuje medianę.
+- **Zamrażanie GUI przy dużych projektach.** Odbudowa `QListWidget` po każdym znaku zawieszała interfejs przy kilkudziesięciu tysiącach segmentów. Lista jest teraz wirtualna (`QAbstractListModel`), a filtrowanie odbywa się w tle na niemutowalnej migawce indeksu.
+- **Zbyt duże moduły.** Okno główne (ok. 1600 linii) i fasada `ProjectService` (ok. 960 linii) zostały podzielone na mixiny według obszarów (menu, projekt, edycja, glosariusz, TM, QA, pliki, AI). Testy, które wykonywały metody okna przez AST, szukają ich teraz we wszystkich plikach okna (`tests/gui_source.py`).
 
-## Import i eksport w GUI (v0.2)
+## Historia wersji
 
-1. Wybierz **Plik → Nowy projekt** i wskaż plik bazy projektu `.sqlite`, albo otwórz istniejący projekt przez **Plik → Otwórz**.
-2. Wybierz **Plik → Import** i wskaż plik `.txt`, `.csv` lub `.json`.
-   - TXT: każda linia staje się osobnym segmentem.
-   - JSON: obsługiwany jest słownik `key: source` albo lista obiektów zawierających `source` oraz opcjonalnie `key` i `target`.
-   - CSV: program wyświetla okno mapowania kolumn: **Klucz / ID**, **Tekst źródłowy** i opcjonalne **Tłumaczenie**.
-3. Po zakończeniu importu lista segmentów odświeża się automatycznie, a pasek stanu pokazuje liczbę zaimportowanych pozycji.
-4. Wybierz **Plik → Eksport**, aby zapisać tłumaczenie jako TXT, CSV lub JSON. Format jest określany na podstawie rozszerzenia pliku.
-
-Import i eksport są wykonywane przez pulę wątków I/O, natomiast GUI odpytuje stan operacji przez `QTimer`, dzięki czemu interfejs nie jest aktualizowany bezpośrednio z wątku roboczego.
-
-
-## QA w GUI (v0.3)
-
-- Panel **QA → Bieżący** aktualizuje się automatycznie po wybraniu segmentu i po każdej zmianie pola Target.
-- Sprawdzane są m.in. brakujące i dodatkowe placeholdery/tagi, puste tłumaczenie, `Source == Target`, liczba nowych linii, spacje brzegowe, podwójne spacje oraz wymagane terminy z glosariusza.
-- Tokeny lokalizacyjne `{g|...}`, `{d|...}` i `{mf|...}` są porównywane strukturalnie, dzięki czemu przetłumaczona zawartość wewnątrz tokenu nie jest błędnie zgłaszana jako brak placeholdera.
-- Polecenie **QA → Sprawdź cały projekt** (`Ctrl+Shift+Q`) skanuje wszystkie segmenty i zapisuje wyniki w zakładce **Projekt**.
-- Dwukrotne kliknięcie wyniku QA projektu przenosi do odpowiedniego segmentu; jeśli segment był ukryty przez filtr lub wyszukiwanie, edytor automatycznie go ujawnia.
-- Panel glosariusza jest wczytywany razem z projektem i te same wpisy są używane przy walidacji pojedynczego segmentu i pełnego projektu.
-
-W v0.3 usunięto także wyścig przy jednoczesnym zapisie do SQLite z wątku autosave i z głównego wątku. Dostęp transakcyjny do współdzielonego połączenia jest serializowany blokadą `RLock`.
-
-
-## Translation Memory i import tłumaczeń (v0.4)
-
-### Import tłumaczenia do istniejącego projektu
-
-Po zaimportowaniu tekstu źródłowego wybierz **Plik → Importuj tłumaczenie…**. Operacja aktualizuje wyłącznie pole **Target** istniejących segmentów — tekst **Source** pozostaje bez zmian.
-
-- **TXT** — kolejne linie są dopasowywane do segmentów według pozycji (`1 → 1`, `2 → 2`, itd.). Jeżeli plik ma więcej linii niż projekt, import zostaje przerwany, aby uniknąć przesunięcia tłumaczeń.
-- **CSV** — pojawia się okno mapowania. Można wybrać kolumnę **Klucz / ID** i kolumnę **Tłumaczenie**. Jeśli klucz nie zostanie wskazany, wiersze są dopasowywane według kolejności.
-- **JSON** — słownik `{ "KEY": "tłumaczenie" }` jest dopasowywany po kluczu. Lista może zawierać napisy (dopasowanie pozycyjne) albo obiekty z `target` oraz opcjonalnym `key` lub `position`.
-
-Niepuste zaimportowane tłumaczenie zmienia status segmentu `NEW` na `TRANSLATED`. Pasek stanu pokazuje liczbę zaktualizowanych i niedopasowanych pozycji.
-
-### Translation Memory w GUI
-
-Panel **TM** jest teraz aktywny. Po wybraniu segmentu program wyszukuje do pięciu podobnych wpisów pamięci dla pary językowej projektu. Dwukrotne kliknięcie sugestii wstawia jej Target do bieżącego segmentu.
-
-Aby zasilić pamięć tłumaczeniową, wybierz **TM → Dodaj tłumaczenia projektu do pamięci**. Do TM trafiają wyłącznie segmenty z niepustym Target. Identyczne pary Source/Target dla tej samej pary językowej nie są dodawane ponownie.
-
-
-## Autosave i współbieżne I/O (v0.5)
-
-Edycja pola **Target** nie wykonuje już synchronicznego zapisu SQLite przy każdym naciśnięciu klawisza. Zamiast tego migawki segmentów trafiają do `SaveQueue` obsługiwanej przez osobny wątek. Szybkie kolejne zmiany tego samego segmentu są scalane po krótkim okresie bezczynności, dzięki czemu do bazy trafia przede wszystkim najnowsza wersja tekstu, a GUI pozostaje responsywne.
-
-Po prawej stronie paska stanu widoczny jest stan autosave: **Autosave: zapisuję… (N)** albo **Autosave: zapisano**. `Ctrl+S` wymusza opróżnienie kolejki i stanowi jawną granicę trwałości. Operacje odczytujące cały projekt (m.in. QA, eksport i synchronizacja TM) również czekają na zapis oczekujących zmian, więc nie pracują na nieaktualnej zawartości SQLite.
-
-Przy zamykaniu projektu `SaveQueue` jest opróżniana przed zamknięciem połączenia z bazą. Jeżeli zapis w tle zakończy się błędem, błąd jest propagowany do GUI zamiast zostać cicho utracony. Import i eksport nadal korzystają z `ThreadPoolExecutor`, natomiast transakcje SQLite są serializowane przez `RLock`.
-
-
-## Workflow statusów tłumaczenia (v0.6)
-
-Każdy segment ma jeden z czterech statusów: **NEW**, **TRANSLATED**, **REVIEWED** albo **APPROVED**. Status bieżącego segmentu można zmienić z listy **Status segmentu** w edytorze. Menu **Workflow** udostępnia również skróty klawiaturowe:
-
-- `Ctrl+1` → `NEW`,
-- `Ctrl+2` → `TRANSLATED`,
-- `Ctrl+3` → `REVIEWED`,
-- `Ctrl+4` → `APPROVED`.
-
-Lista segmentów pokazuje skrócone oznaczenia `[N]`, `[T]`, `[R]`, `[A]`. Istniejący filtr **Filtr statusu** pozwala wyświetlić tylko segmenty na wybranym etapie pracy. `Ctrl+Enter` potwierdza bieżące tłumaczenie: segment `NEW` przechodzi wtedy do `TRANSLATED`, ale segment oznaczony już jako `REVIEWED` lub `APPROVED` nie jest cofany do wcześniejszego etapu.
-
-### Masowa zmiana statusu
-
-Na liście można zaznaczyć wiele segmentów (`Ctrl`/`Shift`, standardowo jak w Windows), a następnie wybrać status z menu **Workflow** albo użyć `Ctrl+1..4`. Zmiana jest zapisywana do SQLite jedną operacją grupową po wcześniejszym opróżnieniu kolejki autosave, dzięki czemu oczekująca migawka tekstu nie może nadpisać nowszego statusu.
-
-### Postęp projektu
-
-Po prawej stronie paska stanu wyświetlany jest licznik:
-
-`T: translated-or-better / wszystkie | R: reviewed-or-better / wszystkie | A: approved / wszystkie`
-
-Wskaźniki są kumulacyjne: `REVIEWED` i `APPROVED` liczą się także jako ukończone tłumaczenie, a `APPROVED` jako ukończona recenzja. Po najechaniu na licznik tooltip pokazuje liczby dla czterech statusów rozłącznych.
-
-
-## Glosariusz projektu (v0.7)
-
-Glosariusz jest przypisany wyłącznie do bieżącego projektu. Jeden termin Source może mieć wiele równorzędnych, dopuszczalnych wariantów Target. Panel **Glosariusz** pozwala wyszukiwać terminy, edytować Source, opis i `case_sensitive`, dodawać/usuwać warianty oraz usuwać całe terminy. Dwukrotne kliknięcie wariantu wstawia go do pola Target w miejscu kursora.
-
-Dopasowanie terminologii działa na całych słowach i frazach. Przykładowo `sword` pasuje do `Take the sword.`, ale nie do `swordsman`. Terminy zawierające znaki specjalne, np. `C++` lub `+1 sword`, są traktowane literalnie. Jeżeli `case_sensitive` jest włączone, wielkość liter ma znaczenie zarówno w Source, jak i w dopuszczalnych wariantach Target.
-
-QA uznaje termin za poprawny, jeśli w Target występuje przynajmniej jeden dopuszczalny wariant. Jeśli żaden wariant nie występuje, komunikat zawiera termin Source oraz pełną listę dozwolonych tłumaczeń.
-
-### Import CSV
-
-Kanoniczny format:
-
-```csv
-source,target,description,case_sensitive
-sword,miecz,Broń biała,false
-sword,ostrze,Broń biała,false
-XP,PD,Punkty doświadczenia,true
-```
-
-Każdy wiersz odpowiada jednemu wariantowi. Wymagane są kolumny `source` i `target`; `description` i `case_sensitive` są opcjonalne. Obsługiwane jest UTF-8 i UTF-8-SIG. Puste Source/Target są liczone jako błędne rekordy i pomijane. Import scala istniejące dane bez usuwania wariantów i bez tworzenia duplikatów.
-
-### Import JSON
-
-Kanoniczny format:
-
-```json
-[
-  {
-    "source": "sword",
-    "targets": ["miecz", "ostrze"],
-    "description": "Broń biała",
-    "case_sensitive": false
-  }
-]
-```
-
-`targets` musi być listą niepustych napisów. Import JSON stosuje tę samą politykę scalania co CSV.
-
-Po imporcie pasek stanu raportuje liczbę nowych terminów, nowych wariantów, duplikatów oraz błędnych rekordów. Błąd strukturalny pliku jest wykrywany przed zapisem, więc nie pozostawia częściowo zaimportowanego glosariusza.
-
-### Eksport
-
-CSV zapisuje jeden wariant na wiersz. JSON zapisuje jeden obiekt na termin z tablicą `targets`. Eksport obejmuje tylko glosariusz aktualnego projektu. Przykładowe pliki znajdują się w `sample_data/glossary_sample.csv` i `sample_data/glossary_sample.json`.
-
-### Migracja projektów 0.6
-
-Przy otwarciu starej bazy GameCAT 0.6 płaska tabela glosariusza jest automatycznie migrowana do relacji `glossary_terms` + `glossary_translations`. Warianty tego samego terminu są scalane, duplikaty usuwane, a wpisy globalne z wcześniejszego modelu nie są przypisywane do projektu. Migracja jest idempotentna i wykonywana transakcyjnie.
-
-## GameCAT 0.10 — OpenAI API
-
-Panel **OpenAI** pozwala tłumaczyć pojedyncze segmenty (skrót `Ctrl+Shift+T`)
-i wsadowo puste Target z wykorzystaniem glosariusza, TM i QA.
-
-**Klucz API:** `OPENAI_API_KEY` lub hasło wpisane tymczasowo w panelu;
-opcjonalnie zapis w systemowym magazynie poświadczeń za pomocą `keyring`.
-**Nie jest zapisywany w bazie projektu.**
-
-Po wygenerowaniu pojedynczego tłumaczenia najpierw sprawdź i ewentualnie
-popraw podgląd, a potem kliknij **Zastosuj propozycję do Target**. Zmiana
-istniejącego Target wymaga potwierdzenia, a wynik z QA wymaga dodatkowej zgody.
-Segmenty oznaczone `[AI]` wymagają sprawdzenia przez tłumacza.
-
-Przy tłumaczeniu wsadowym konieczne są ręcznie ustawione ceny za 1 mln tokenów,
-budżet i maksymalna liczba segmentów. Budżet ma charakter **szacunkowy**,
-nie jest twardym limitem naliczania opłat. Płatne żądania mogą zostać
-naliczone nawet po anulowaniu. Tekst i dopasowania TM/glosariusza są
-wysyłane na serwery OpenAI.
-
-Szczegóły: [docs/releases/0.10.md](docs/releases/0.10.md).
-
-Materiały prezentacyjne wydania: [PDF raportu](docs/GameCAT_1.0_raport_zaliczeniowy.pdf) i [PowerPoint do obrony](docs/GameCAT_1.0_obrona.pptx).
+| Wersja | Najważniejsze zmiany |
+|---|---|
+| 0.1–0.6 | edytor, SQLite, import/eksport TXT/CSV/JSON, QA, autosave w tle, analiza TM w procesach, benchmark GIL |
+| 0.7–0.9 | glosariusz z wariantami, zewnętrzna baza TM, zaawansowane wyszukiwanie i masowa zamiana |
+| 0.10–0.11 | OpenAI API, formaty TSV/XLSX/XML i profile mapowania, eksport do szablonu |
+| 1.0–1.1 | stabilizacja bazy i wielu projektów, fasada `ProjectService`, operacje w tle z odrzucaniem nieaktualnych wyników |
+| 1.2 | historia zatwierdzeń, glosariusz kontekstowy, zawijanie tekstu, wirtualna lista, poprawki CSV |
+| 1.2.6 | podział okna głównego i `ProjectService` na mixiny, `yield from` w imporcie i QA, polskie docstringi, porządek w dokumentacji |

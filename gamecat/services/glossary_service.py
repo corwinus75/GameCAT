@@ -1,3 +1,4 @@
+"""Logika glosariusza ograniczona do jednego projektu."""
 from __future__ import annotations
 
 from gamecat.database.repositories import GlossaryRepository
@@ -6,27 +7,35 @@ from gamecat.models.glossary import GlossaryTerm
 
 
 class GlossaryService:
-    """Project-scoped glossary workflow and invariants."""
+    """Operacje na glosariuszu jednego projektu z pilnowaniem jego niezmienników."""
 
     def __init__(self, repository: GlossaryRepository, project_id: int | None):
+        """Powiąż usługę z repozytorium glosariusza i ID projektu."""
         self.repository = repository
         self.project_id = project_id
 
     def _project_id(self) -> int:
+        """Zwróć ID projektu wymagane przez operacje glosariusza.
+
+        :raises ValueError: gdy usługa nie jest powiązana z projektem.
+        """
         if self.project_id is None:
             raise ValueError('project_id is required for project glossary operations')
         return self.project_id
 
     def list_terms(self) -> list[GlossaryTerm]:
+        """Zwróć wszystkie terminy projektu."""
         return self.repository.list_terms(self._project_id())
 
     def find_terms(self, source: str) -> list[GlossaryTerm]:
+        """Zwróć terminy występujące w podanym tekście źródłowym."""
         return [
             term for term in self.list_terms()
             if contains_term(source, term.source_term, case_sensitive=term.case_sensitive)
         ]
 
     def create_term(self, term: GlossaryTerm) -> GlossaryTerm:
+        """Dodaj termin; jeśli termin o tej tożsamości istnieje, scal z nim warianty."""
         project_id = self._project_id()
         term.project_id = project_id
         existing = self.repository.get_by_identity(project_id, term.source_term, term.case_sensitive)
@@ -36,6 +45,13 @@ class GlossaryService:
         return self.repository.create_term(term)
 
     def save_term(self, term: GlossaryTerm) -> GlossaryTerm:
+        """Zapisz zmiany terminu (nowy termin jest tworzony).
+
+        Gdy po zmianie termin koliduje z innym istniejącym terminem, oba są scalane.
+        Warianty usunięte w edycji są usuwane z bazy.
+
+        :raises ValueError: termin należy do innego projektu.
+        """
         if term.id is None:
             return self.create_term(term)
         project_id = self._project_id()
@@ -65,18 +81,30 @@ class GlossaryService:
         return self.repository.get_term(term.id)
 
     def delete_term(self, term_id: int) -> None:
+        """Usuń termin projektu.
+
+        :raises ValueError: termin należy do innego projektu.
+        """
         term = self.repository.get_term(term_id)
         if term.project_id != self._project_id():
             raise ValueError('term does not belong to current project')
         self.repository.delete_term(term_id)
 
     def add_variant(self, term_id: int, target: str) -> bool:
+        """Dodaj wariant tłumaczenia; zwraca ``False``, gdy już istniał.
+
+        :raises ValueError: termin należy do innego projektu.
+        """
         term = self.repository.get_term(term_id)
         if term.project_id != self._project_id():
             raise ValueError('term does not belong to current project')
         return self.repository.add_variant(term_id, target)
 
     def remove_variant(self, term_id: int, target: str) -> None:
+        """Usuń wariant tłumaczenia; ostatniego wariantu nie można usunąć.
+
+        :raises ValueError: termin innego projektu lub próba usunięcia ostatniego wariantu.
+        """
         term = self.repository.get_term(term_id)
         if term.project_id != self._project_id():
             raise ValueError('term does not belong to current project')
@@ -85,4 +113,5 @@ class GlossaryService:
         self.repository.remove_variant(term_id, target)
 
     def search(self, query: str) -> list[GlossaryTerm]:
+        """Wyszukaj terminy po fragmencie Source lub wariantu."""
         return self.repository.search_terms(self._project_id(), query)

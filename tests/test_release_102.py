@@ -1,4 +1,4 @@
-"""Regression coverage for the GameCAT 1.0.2 database and multi-project release."""
+"""Testy regresyjne bazy danych i obsługi wielu projektów (wydanie 1.0.2)."""
 from __future__ import annotations
 
 import sqlite3

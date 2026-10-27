@@ -78,7 +78,7 @@ def test_import_translation_txt_rejects_more_rows_than_project(tmp_path: Path):
 
 
 def test_reimport_changed_translation_demotes_approved_segment(tmp_path: Path):
-    """An imported revision must not retain a human approval of older text."""
+    """Zaimportowana zmiana nie może zachować zatwierdzenia starszego tekstu."""
     service, project = _project_with_source(tmp_path)
     incoming = tmp_path / 'translation.txt'
     try:
@@ -99,7 +99,7 @@ def test_reimport_changed_translation_demotes_approved_segment(tmp_path: Path):
 
 
 def test_reimport_unchanged_translation_preserves_reviewed_status(tmp_path: Path):
-    """Identical imports should not invalidate a completed human review."""
+    """Identyczny import nie powinien unieważniać zakończonej recenzji."""
     service, project = _project_with_source(tmp_path)
     incoming = tmp_path / 'translation.txt'
     try:

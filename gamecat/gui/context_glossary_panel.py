@@ -1,4 +1,4 @@
-"""Read-only project glossary filtered to the current source segment."""
+"""Panel glosariusza tylko do odczytu, zawężony do terminów z bieżącego Source."""
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
@@ -10,10 +10,12 @@ from gamecat.models.glossary import GlossaryTerm
 
 
 class ContextGlossaryPanel(QGroupBox):
+    """Lista terminów występujących w bieżącym segmencie z możliwością wstawienia wariantu."""
     open_full_requested = Signal()
     target_insert_requested = Signal(str)
 
     def __init__(self, parent=None):
+        """Zbuduj listę terminów i przycisk otwarcia pełnego glosariusza."""
         super().__init__('Glosariusz segmentu', parent)
         self._all_terms: list[GlossaryTerm] = []
         self._visible: list[GlossaryTerm] = []
@@ -28,14 +30,17 @@ class ContextGlossaryPanel(QGroupBox):
         self.list_widget.itemDoubleClicked.connect(self._offer_target)
 
     def set_terms(self, terms: list[GlossaryTerm]) -> None:
+        """Ustaw pełny glosariusz projektu i odśwież listę kontekstową."""
         self._all_terms = list(terms)
         self._refresh()
 
     def set_source_context(self, source: str) -> None:
+        """Ustaw tekst bieżącego Source i odśwież listę kontekstową."""
         self._source = source
         self._refresh()
 
     def _refresh(self) -> None:
+        """Pokaż tylko terminy występujące w Source (bez powtórzeń)."""
         seen: set[int] = set()
         self._visible = []
         for _, _, term in term_spans(self._source, self._all_terms):
@@ -48,6 +53,7 @@ class ContextGlossaryPanel(QGroupBox):
             self.list_widget.addItem(f'{term.source_term} → {" | ".join(term.targets)}')
 
     def _offer_target(self, item) -> None:
+        """Wstaw jedyny wariant terminu albo pokaż menu wyboru wariantu."""
         index = self.list_widget.row(item)
         if not 0 <= index < len(self._visible):
             return

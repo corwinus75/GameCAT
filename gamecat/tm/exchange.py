@@ -1,7 +1,8 @@
-"""Lossless CSV/JSON exchange of Translation Memory entries.
+"""Bezstratna wymiana wpisów pamięci tłumaczeniowej w CSV i JSON.
 
-All rows are validated before any database mutation. Exports are staged in a
-temporary file and atomically replaced to avoid producing truncated exports.
+Wszystkie wiersze są walidowane przed jakąkolwiek zmianą bazy. Eksport
+powstaje w pliku tymczasowym i jest atomowo podmieniany, więc nie zostaje
+uszkodzony plik przy błędzie zapisu.
 """
 from __future__ import annotations
 
@@ -19,6 +20,10 @@ _REQUIRED = _FIELDS[:4]
 
 
 def _entry(row: object, index: int) -> TranslationMemoryEntry:
+    """Zbuduj wpis TM z rekordu pliku wymiany po walidacji pól.
+
+    :raises ValueError: brak wymaganych pól lub nieprawidłowa data.
+    """
     if not isinstance(row, dict):
         raise ValueError(f'TM entry {index}: expected an object')
     values: dict[str, str] = {}
@@ -44,7 +49,10 @@ def _entry(row: object, index: int) -> TranslationMemoryEntry:
 
 
 def read_tm(path: Path) -> list[TranslationMemoryEntry]:
-    """Read and validate the full exchange file; no partial imports."""
+    """Wczytaj i zwaliduj cały plik wymiany TM (bez importu częściowego).
+
+    :raises ValueError: nieobsługiwany format lub błędne rekordy.
+    """
     path = Path(path)
     suffix = path.suffix.casefold()
     if suffix == '.json':
@@ -66,7 +74,10 @@ def read_tm(path: Path) -> list[TranslationMemoryEntry]:
 
 
 def write_tm(path: Path, entries: list[TranslationMemoryEntry]) -> int:
-    """Save all entries of the selected TM storage as CSV/JSON atomically."""
+    """Atomowo zapisz wpisy TM do CSV/JSON i zwróć ich liczbę.
+
+    :raises ValueError: nieobsługiwane rozszerzenie pliku.
+    """
     path = Path(path)
     suffix = path.suffix.casefold()
     if suffix not in {'.csv', '.json'}:

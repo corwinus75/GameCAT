@@ -1,18 +1,25 @@
+"""Miara podobieństwa tekstów w czystym Pythonie (obliczenia CPU-bound)."""
 import re
 
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 
 
 def _tokens(text: str) -> list[str]:
+    """Podziel tekst na słowa wyrażeniem regularnym, bez rozróżniania wielkości liter."""
     return _WORD_RE.findall(text.casefold())
 
 
 def _bigrams(tokens: list[str]) -> set[tuple[str, str]]:
+    """Zwróć zbiór par sąsiednich słów (bigramów)."""
     return set(zip(tokens, tokens[1:]))
 
 
 def similarity(source: str, candidate: str) -> float:
-    """Pure-Python token/ngram similarity in the 0..1 range."""
+    """Oblicz podobieństwo tekstów w zakresie 0..1.
+
+    Łączy współczynnik Dice’a dla słów (55%), dla bigramów (35%) i stosunek
+    długości (10%); identyczne teksty dają 1.0.
+    """
     if source == candidate:
         return 1.0
     a, b = _tokens(source), _tokens(candidate)

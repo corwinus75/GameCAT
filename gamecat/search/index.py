@@ -1,7 +1,7 @@
-"""Fast, Qt-independent index for interactive filtering of large projects.
+"""Szybki, niezależny od Qt indeks do interaktywnego filtrowania dużych projektów.
 
-The index is a snapshot: background workers never read mutable Segment objects.
-Only the UI thread updates individual records following an explicit commit.
+Indeks jest migawką: wątki w tle nigdy nie czytają modyfikowalnych obiektów
+``Segment``. Tylko wątek GUI aktualizuje pojedyncze rekordy po jawnym zapisie.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from gamecat.search.operations import SearchQuery
 
 @dataclass(frozen=True, slots=True)
 class SearchRecord:
+    """Niemutowalny rekord indeksu z tekstami przygotowanymi do wyszukiwania bez wielkości liter."""
     id: int | None
     position: int
     source: str
@@ -26,23 +27,26 @@ class SearchRecord:
 
     @classmethod
     def from_segment(cls, segment: Segment) -> 'SearchRecord':
+        """Utwórz rekord indeksu z segmentu (alternatywny konstruktor)."""
         return cls(segment.id, segment.position, segment.source, segment.target,
                    segment.status.value, segment.source.casefold(), segment.target.casefold())
 
 
 class SegmentSearchIndex:
-    """Immutable records supporting cancellable, off-main-thread searches.
+    """Niemutowalne rekordy umożliwiające przerywalne wyszukiwanie poza wątkiem GUI.
 
-    Updates publish a replacement tuple instead of changing existing records.
-    This allows an already-running filter to finish or cancel safely.
+    Aktualizacja publikuje nową krotkę rekordów zamiast zmieniać istniejące,
+    dzięki czemu trwające filtrowanie może bezpiecznie się zakończyć lub przerwać.
     """
 
     def __init__(self, segments: Sequence[Segment]):
+        """Zbuduj indeks z migawek segmentów."""
         self._records = tuple(SearchRecord.from_segment(s) for s in segments)
         self._id_to_row = {record.id: row for row, record in enumerate(self._records)
                            if record.id is not None}
 
     def updated(self, segment: Segment) -> 'SegmentSearchIndex':
+        """Zwróć nowy indeks z odświeżonym rekordem segmentu (oryginał pozostaje bez zmian)."""
         row = self._id_to_row.get(segment.id)
         if row is None:
             return self
@@ -57,6 +61,10 @@ class SegmentSearchIndex:
                      results: list[int], cancel: Event | None,
                      qa_ids: frozenset[int] = frozenset(),
                      tm_ids: frozenset[int] = frozenset()) -> list[int] | None:
+        """Przefiltruj i posortuj wiersze; zwróć ``None``, gdy ustawiono zdarzenie *cancel*.
+
+        Przerwanie jest sprawdzane co 128 rekordów.
+        """
         for row, record in enumerate(self._records):
             if cancel is not None and row % 128 == 0 and cancel.is_set():
                 return None
@@ -97,7 +105,10 @@ class SegmentSearchIndex:
 
     def search(self, query: SearchQuery, *, qa_error_ids=(), tm_match_ids=(),
                cancel: Event | None = None) -> list[int] | None:
-        """Filter a stable snapshot. No database or Qt operations occur here."""
+        """Przefiltruj stabilną migawkę – bez operacji na bazie i Qt.
+
+        :raises ValueError: nieprawidłowe opcje lub wyrażenie regularne.
+        """
         if query.scope not in {'both', 'source', 'target'} or query.sort not in {'position', 'source', 'status'} \
                 or query.quality not in {'all', 'untranslated', 'qa_errors', 'tm_match'} \
                 or query.status not in {'ALL', *(s.value for s in SegmentStatus)}:

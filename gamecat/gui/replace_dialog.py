@@ -1,4 +1,4 @@
-"""Explicit preview and confirmation for replacing Target text in bulk."""
+"""Jawny podgląd i potwierdzenie masowej zamiany tekstu w Target."""
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
@@ -11,9 +11,10 @@ from gamecat.search.operations import TargetReplacement, preview_replacements
 
 
 class BatchReplaceDialog(QDialog):
-    """Prepare changes without mutating segments; caller persists after accept."""
+    """Przygotowuje zmiany bez modyfikowania segmentów; zapis wykonuje wywołujący po akceptacji."""
 
     def __init__(self, visible: list[Segment], selected: list[Segment], parent=None):
+        """Zbuduj formularz wyszukiwania i zamiany oraz tabelę podglądu."""
         super().__init__(parent)
         self.setWindowTitle('Zamień w Target — podgląd zmian')
         self.resize(900, 580)
@@ -60,12 +61,14 @@ class BatchReplaceDialog(QDialog):
             check.toggled.connect(self._invalidate)
 
     def _invalidate(self, *_args) -> None:
+        """Unieważnij podgląd po zmianie parametrów i zablokuj przycisk OK."""
         self._preview = []
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
         self.summary.setText('Parametry zmienione — odśwież podgląd przed zastosowaniem.')
         self.table.setRowCount(0)
 
     def _refresh_preview(self, *_args) -> None:
+        """Policz podgląd zamian dla widocznych lub zaznaczonych segmentów."""
         candidates = self._selected if self.selection_check.isChecked() else self._visible
         try:
             self._preview = preview_replacements(
@@ -90,8 +93,10 @@ class BatchReplaceDialog(QDialog):
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(bool(self._preview))
 
     def replacements(self) -> dict[int, str]:
+        """Zwróć zatwierdzone zmiany jako słownik ``ID segmentu -> nowy Target``."""
         return {item.segment_id: item.target for item in self._preview}
 
     @property
     def include_reviewed(self) -> bool:
+        """Czy użytkownik zgodził się zmieniać segmenty zrecenzowane i zatwierdzone."""
         return self.reviewed_check.isChecked()

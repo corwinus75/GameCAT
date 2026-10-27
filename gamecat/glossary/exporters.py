@@ -1,3 +1,4 @@
+"""Eksport glosariusza do CSV i JSON."""
 from __future__ import annotations
 
 import csv
@@ -9,7 +10,7 @@ from gamecat.models.glossary import GlossaryTerm
 
 
 def export_glossary_csv(path: Path, terms: Iterable[GlossaryTerm]) -> int:
-    """Export one CSV row per target variant and return row count."""
+    """Zapisz glosariusz do CSV (jeden wiersz na wariant tłumaczenia) i zwróć liczbę wierszy."""
     count = 0
     with path.open('w', encoding='utf-8', newline='') as handle:
         writer = csv.writer(handle)
@@ -22,7 +23,7 @@ def export_glossary_csv(path: Path, terms: Iterable[GlossaryTerm]) -> int:
 
 
 def export_glossary_json(path: Path, terms: Iterable[GlossaryTerm]) -> int:
-    """Export one JSON object per source term and return term count."""
+    """Zapisz glosariusz do JSON (jeden obiekt na termin źródłowy) i zwróć liczbę terminów."""
     data = [
         {
             'source': term.source_term,

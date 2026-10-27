@@ -1,3 +1,4 @@
+"""Panel kontroli jakości (QA)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
@@ -9,11 +10,12 @@ from gamecat.qa.rules import QAIssue
 
 
 class QAPanel(QGroupBox):
-    """Shows live QA for the current segment and persistent full-project scan results."""
+    """Pokazuje bieżące wyniki QA segmentu oraz trwały wynik skanu całego projektu."""
 
     segment_requested = Signal(int)
 
     def __init__(self, parent=None):
+        """Zbuduj zakładki „Bieżący” i „Projekt”."""
         super().__init__('QA', parent)
         self.tabs = QTabWidget(self)
         self.current_list = QListWidget()
@@ -40,6 +42,7 @@ class QAPanel(QGroupBox):
         self.list_widget = self.current_list
 
     def set_issues(self, issues: list[QAIssue]) -> None:
+        """Wyświetl problemy QA bieżącego segmentu."""
         self.current_list.clear()
         for issue in issues:
             self.current_list.addItem(f'{issue.code}: {issue.message}')
@@ -47,6 +50,7 @@ class QAPanel(QGroupBox):
         self.setTitle(f'QA ({len(issues)})')
 
     def set_project_report(self, report: ProjectQAReport) -> None:
+        """Wyświetl wynik QA całego projektu i przełącz na jego zakładkę."""
         self.project_list.clear()
         for result in report.results:
             for issue in result.issues:
@@ -61,10 +65,12 @@ class QAPanel(QGroupBox):
         self.tabs.setCurrentIndex(1)
 
     def clear_project_report(self) -> None:
+        """Wyczyść wynik QA całego projektu (np. po zmianie danych)."""
         self.project_list.clear()
         self.tabs.setTabText(1, 'Projekt (0)')
 
     def _request_segment(self, item: QListWidgetItem) -> None:
+        """Zgłoś przejście do segmentu wskazanego dwukrotnym kliknięciem."""
         segment_id = item.data(Qt.ItemDataRole.UserRole)
         if segment_id is not None:
             self.segment_requested.emit(int(segment_id))

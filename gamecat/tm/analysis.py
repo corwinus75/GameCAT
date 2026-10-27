@@ -34,6 +34,7 @@ _WORD_RE = re.compile(r'\w+', re.UNICODE)
 
 
 class ExecutionMode(StrEnum):
+    """Tryb wykonania analizy: sekwencyjnie, w wątkach albo w procesach."""
     SEQUENTIAL = 'sequential'
     THREADS = 'threads'
     PROCESSES = 'processes'
@@ -59,6 +60,7 @@ def band_for(score: float) -> str:
 
 
 def word_count(text: str) -> int:
+    """Policz słowa w tekście (tokenizacja wyrażeniem regularnym)."""
     return len(_WORD_RE.findall(text))
 
 
@@ -74,6 +76,7 @@ class SegmentMatch:
 
     @property
     def band(self) -> str:
+        """Etykieta progu dopasowania dla wyniku podobieństwa."""
         return band_for(self.score)
 
 
@@ -94,6 +97,7 @@ class TMAnalysisReport:
     band_words: dict[str, int] = field(init=False)
 
     def __post_init__(self) -> None:
+        """Policz segmenty i słowa w każdym progu dopasowania."""
         self.band_segments = {label: 0 for label, _ in MATCH_BANDS}
         self.band_words = {label: 0 for label, _ in MATCH_BANDS}
         for match in self.matches:
@@ -102,13 +106,16 @@ class TMAnalysisReport:
 
     @property
     def segment_count(self) -> int:
+        """Liczba przeanalizowanych segmentów."""
         return len(self.matches)
 
     @property
     def total_words(self) -> int:
+        """Łączna liczba słów we wszystkich progach."""
         return sum(self.band_words.values())
 
     def exact_matches(self) -> list[SegmentMatch]:
+        """Zwróć dopasowania 100% z tłumaczeniem z TM (do pretranslacji)."""
         return [m for m in self.matches if m.score >= 1.0 and m.tm_target is not None]
 
 
@@ -131,6 +138,7 @@ def best_match(source: str, tm: Sequence[TMPair], exact: dict[str, str] | None =
 
 
 def _match_item(item: SegmentItem, tm: Sequence[TMPair], exact: dict[str, str]) -> SegmentMatch:
+    """Znajdź najlepsze dopasowanie TM dla jednego segmentu."""
     segment_id, source = item
     score, tm_source, tm_target = best_match(source, tm, exact)
     return SegmentMatch(segment_id, word_count(source), score, tm_source, tm_target, source)
@@ -144,16 +152,19 @@ _WORKER_EXACT: dict[str, str] = {}
 
 
 def _init_worker(tm: Sequence[TMPair]) -> None:
+    """Inicjalizator procesu roboczego: zapamiętaj TM i indeks dopasowań dokładnych w zmiennych globalnych procesu."""
     global _WORKER_TM, _WORKER_EXACT
     _WORKER_TM = tm
     _WORKER_EXACT = _exact_index(tm)
 
 
 def _match_item_in_worker(item: SegmentItem) -> SegmentMatch:
+    """Dopasuj segment w procesie roboczym, korzystając z TM przekazanej przez inicjalizator."""
     return _match_item(item, _WORKER_TM, _WORKER_EXACT)
 
 
 def _exact_index(tm: Iterable[TMPair]) -> dict[str, str]:
+    """Zbuduj słownik ``source -> target`` do wyszukiwania dopasowań dokładnych w O(1)."""
     index: dict[str, str] = {}
     for source, target in tm:
         index.setdefault(source, target)  # pierwszy wpis wygrywa
@@ -161,6 +172,7 @@ def _exact_index(tm: Iterable[TMPair]) -> dict[str, str]:
 
 
 def default_workers() -> int:
+    """Domyślna liczba workerów – liczba rdzeni logicznych."""
     return os.cpu_count() or 1
 
 

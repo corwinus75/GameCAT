@@ -1,3 +1,4 @@
+"""QA całego projektu."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from gamecat.qa.validator import validate_segment
 
 @dataclass(frozen=True, slots=True)
 class SegmentQAResult:
-    """QA issues assigned to one project segment."""
+    """Problemy QA przypisane do jednego segmentu projektu."""
 
     segment: Segment
     issues: tuple[QAIssue, ...]
@@ -19,17 +20,19 @@ class SegmentQAResult:
 
 @dataclass(frozen=True, slots=True)
 class ProjectQAReport:
-    """Summary of a full-project QA scan."""
+    """Podsumowanie skanu QA całego projektu."""
 
     segment_count: int
     results: list[SegmentQAResult]
 
     @property
     def issue_segment_count(self) -> int:
+        """Liczba segmentów z co najmniej jednym problemem."""
         return len(self.results)
 
     @property
     def issue_count(self) -> int:
+        """Łączna liczba problemów we wszystkich segmentach."""
         return sum(len(result.issues) for result in self.results)
 
 
@@ -37,7 +40,7 @@ def scan_segments(
     segments: Iterable[Segment],
     glossary: Iterable[GlossaryTerm | GlossaryEntry] = (),
 ) -> ProjectQAReport:
-    """Run QA for all segments and retain only segments that have issues."""
+    """Uruchom QA dla wszystkich segmentów (także z generatora) i zachowaj tylko te z problemami."""
     glossary_list = list(glossary)
     results: list[SegmentQAResult] = []
     count = 0

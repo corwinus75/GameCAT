@@ -1,3 +1,4 @@
+"""Okno mapowania kolumn CSV przy imporcie pliku źródłowego."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,12 +9,13 @@ from gamecat.importers.csv_format import read_csv_headers, suggest_source_column
 
 
 class CsvImportDialog(QDialog):
-    """Let the user map CSV columns to GameCAT key/source/target fields."""
+    """Pozwala przypisać kolumny CSV do pól klucza, Source, Target i komentarza."""
 
     NO_TARGET = '(brak)'
     NO_KEY = '(brak klucza — według kolejności)'
 
     def __init__(self, path: Path, parent=None):
+        """Wczytaj nagłówki pliku i wstępnie dobierz kolumny na podstawie ich nazw."""
         super().__init__(parent)
         self.setWindowTitle('Mapowanie kolumn CSV')
         fields = self._read_fields(path)
@@ -55,10 +57,12 @@ class CsvImportDialog(QDialog):
 
     @staticmethod
     def _read_fields(path: Path) -> list[str]:
+        """Odczytaj nazwy kolumn pliku CSV."""
         return read_csv_headers(path)
 
     @staticmethod
     def _select_best(combo: QComboBox, candidates: tuple[str, ...]) -> None:
+        """Zaznacz w liście pierwszą kolumnę pasującą do jednej z nazw kandydujących."""
         lookup = {combo.itemText(i).casefold(): i for i in range(combo.count())}
         for candidate in candidates:
             if candidate.casefold() in lookup:
@@ -66,6 +70,7 @@ class CsvImportDialog(QDialog):
                 return
 
     def columns(self) -> tuple[str | None, str, str | None]:
+        """Zwróć wybrane kolumny (klucz lub ``None``, Source, Target lub ``None``)."""
         target = self.target_combo.currentText()
         return (
             None if self.key_combo.currentText() == self.NO_KEY else self.key_combo.currentText(),
@@ -74,5 +79,6 @@ class CsvImportDialog(QDialog):
         )
 
     def comment_column(self) -> str | None:
+        """Zwróć wybraną kolumnę komentarza albo ``None``."""
         value = self.comment_combo.currentText()
         return None if value == self.NO_TARGET else value

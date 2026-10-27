@@ -26,6 +26,7 @@ class TMAnalysisDialog(QDialog):
     segments_changed = Signal()
 
     def __init__(self, service: ProjectService, project: Project, parent=None):
+        """Zbuduj wybór trybu i liczby workerów, tabelę progów oraz przyciski pretranslacji."""
         super().__init__(parent)
         self.setWindowTitle('Analiza projektu względem TM')
         self.resize(520, 420)
@@ -82,6 +83,7 @@ class TMAnalysisDialog(QDialog):
         layout.addWidget(buttons)
 
     def start_analysis(self) -> None:
+        """Uruchom analizę w wybranym trybie (w tle) i zablokuj przyciski do jej końca."""
         mode = self.mode_combo.currentData()
         self.run_button.setEnabled(False)
         self.apply_button.setEnabled(False)
@@ -92,6 +94,7 @@ class TMAnalysisDialog(QDialog):
         self._poll(future)
 
     def _poll(self, future: Future[TMAnalysisReport]) -> None:
+        """Odpytuj zadanie analizy co 50 ms i pokaż raport lub błąd w wątku GUI."""
         if not future.done():
             QTimer.singleShot(50, lambda: self._poll(future))
             return
@@ -105,6 +108,7 @@ class TMAnalysisDialog(QDialog):
         self.show_report(report)
 
     def show_report(self, report: TMAnalysisReport) -> None:
+        """Wyświetl liczby segmentów i słów w progach dopasowania oraz czas analizy."""
         self._report = report
         for row, (label, _) in enumerate(MATCH_BANDS):
             self.table.setItem(row, 0, QTableWidgetItem(label))
@@ -118,6 +122,7 @@ class TMAnalysisDialog(QDialog):
         self._refresh_apply_button()
 
     def _refresh_apply_button(self) -> None:
+        """Włącz przycisk pretranslacji, gdy istnieją dopasowania powyżej progu."""
         if self._report is None:
             self.apply_button.setEnabled(False)
             return
@@ -130,7 +135,7 @@ class TMAnalysisDialog(QDialog):
         self.apply_button.setEnabled(eligible > 0)
 
     def apply_exact_matches(self) -> None:
-        """Apply selected TM suggestions only to empty targets."""
+        """Wstaw wybrane dopasowania TM tylko do pustych segmentów (próg <100% wymaga potwierdzenia)."""
         if self._report is None or not self.apply_button.isEnabled():
             return
         threshold = self.pretranslate_spin.value() / 100

@@ -34,7 +34,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmarks.dataset import generate_dataset  # noqa: E402
-from gamecat.tm.analysis import ExecutionMode, analyze  # noqa: E402
+from gamecat.tm.analysis import ExecutionMode, TMAnalysisReport, analyze  # noqa: E402
 
 README_START = '<!-- BENCHMARK:START -->'
 README_END = '<!-- BENCHMARK:END -->'
@@ -47,11 +47,13 @@ MODE_LABELS = {
 
 @dataclass(slots=True)
 class ModeResult:
+    """Czasy wszystkich rund pomiaru jednego trybu wykonania."""
     mode: str
     times: list[float]
 
     @property
     def median(self) -> float:
+        """Mediana czasu rund."""
         return statistics.median(self.times)
 
 
@@ -70,7 +72,9 @@ def environment() -> dict[str, object]:
     }
 
 
-def run_once(segments, tm, mode: ExecutionMode, workers: int):
+def run_once(segments: list[tuple[int, str]], tm: list[tuple[str, str]], mode: ExecutionMode,
+             workers: int) -> tuple[float, TMAnalysisReport]:
+    """Zmierz jedno wykonanie analizy TM w podanym trybie; zwraca czas i raport."""
     start = time.perf_counter()
     report = analyze(segments, tm, mode=mode, workers=workers)
     return time.perf_counter() - start, report
@@ -78,6 +82,11 @@ def run_once(segments, tm, mode: ExecutionMode, workers: int):
 
 def run_benchmark(n_segments: int, n_tm: int, repeats: int, workers: int, seed: int,
                   log=print) -> dict[str, object]:
+    """Zmierz tryby sekwencyjny, wątki i procesy na tych samych danych; zwróć słownik wyników.
+
+    Każdy tryb jest najpierw rozgrzewany i sprawdzany pod kątem identycznych
+    wyników, a kolejność trybów rotuje między rundami.
+    """
     segments, tm = generate_dataset(n_segments, n_tm, seed)
     modes = list(ExecutionMode)
 
@@ -123,6 +132,7 @@ def run_benchmark(n_segments: int, n_tm: int, repeats: int, workers: int, seed: 
 
 
 def markdown_table(data: dict[str, object]) -> str:
+    """Zbuduj tabelę wyników w Markdown wraz z opisem danych i środowiska."""
     env = data['environment']; params = data['parameters']
     lines = [
         '| Tryb | Mediana [s] | Min [s] | Max [s] | Przyspieszenie |',
@@ -143,6 +153,7 @@ def markdown_table(data: dict[str, object]) -> str:
 
 
 def save_plot(data: dict[str, object], path: Path) -> None:
+    """Zapisz wykres słupkowy median (matplotlib) do pliku PNG."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -173,6 +184,7 @@ def save_plot(data: dict[str, object], path: Path) -> None:
 
 
 def update_readme(readme: Path, table: str) -> bool:
+    """Wstaw tabelę wyników do README.md między znacznikami ``BENCHMARK:START/END``; ``False``, gdy ich brak."""
     text = readme.read_text(encoding='utf-8')
     if README_START not in text or README_END not in text:
         return False
@@ -184,9 +196,10 @@ def update_readme(readme: Path, table: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Punkt wejścia CLI (argparse): uruchom pomiar i zapisz wyniki, wykres oraz opcjonalnie README."""
     parser = argparse.ArgumentParser(description='Benchmark GIL: analiza TM sekwencyjnie / wątki / procesy.')
-    parser.add_argument('--segments', type=int, default=800)
-    parser.add_argument('--tm', type=int, default=1600, help='liczba wpisów TM')
+    parser.add_argument('--segments', type=int, default=600)
+    parser.add_argument('--tm', type=int, default=1200, help='liczba wpisów TM')
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--workers', type=int, default=os.cpu_count() or 1)
     parser.add_argument('--seed', type=int, default=2026)

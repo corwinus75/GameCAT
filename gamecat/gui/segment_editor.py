@@ -1,10 +1,10 @@
+"""Edytor segmentów: lista, wyszukiwanie w tle, szkice Target i akcje workflow."""
 from __future__ import annotations
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, Future
 from threading import Event
 import re
-from datetime import datetime, timezone
 
 from PySide6.QtCore import Signal, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from gamecat.gui.glossary_source_edit import GlossarySourceEdit
 from gamecat.gui.segment_list import SegmentListView
 from gamecat.models.segment import Segment, SegmentStatus
-from gamecat.workflow.status import ProjectProgress, confirmed_translation_status, status_after_target_edit
+from gamecat.workflow.status import ProjectProgress
 from gamecat.search.operations import SearchQuery
 from gamecat.search.index import SegmentSearchIndex
 
@@ -39,7 +39,12 @@ _STATUS_BADGES = {
 
 
 class SegmentEditor(QWidget):
-    """Source/target editor with navigation, searching and workflow statuses."""
+    """Edytor Source/Target z nawigacją, wyszukiwaniem i statusami workflow.
+
+    Zmiany Target i komentarza są szkicami w pamięci; trwały zapis następuje
+    dopiero po akcji użytkownika (Zapisz, Zatwierdź, LQA). Filtrowanie dużych
+    projektów działa w wątku tła na migawce indeksu.
+    """
 
     segment_changed = Signal(object)
     segment_modified = Signal(object)  # Legacy signal for explicit external operations.
@@ -49,6 +54,7 @@ class SegmentEditor(QWidget):
     search_context_requested = Signal()
 
     def __init__(self, parent=None):
+        """Zbuduj listę segmentów, filtry, pola Source/Target/komentarza i przyciski akcji."""
         super().__init__(parent)
         self._segments: list[Segment] = []
         self._visible: list[Segment] = []
@@ -183,6 +189,7 @@ class SegmentEditor(QWidget):
         QShortcut(QKeySequence('Ctrl+F'), self, activated=self.search_edit.setFocus)
 
     def set_segments(self, segments: list[Segment], *, preserve_drafts: bool = False) -> None:
+        """Załaduj segmenty projektu; opcjonalnie zachowaj szkice istniejących segmentów."""
         self._invalidate_search()
         if preserve_drafts:
             valid_ids = {segment.id for segment in segments}
@@ -203,22 +210,25 @@ class SegmentEditor(QWidget):
         self._refilter()
 
     def project_progress(self) -> ProjectProgress:
+        """Policz postęp na podstawie segmentów załadowanych w edytorze."""
         counts = Counter(segment.status for segment in self._segments)
         return ProjectProgress.from_counts(counts)
 
     @staticmethod
     def _item_text(segment: Segment) -> str:
+        """Zwróć etykietę segmentu na liście (status, pozycja, początek Source)."""
         badge = _STATUS_BADGES[segment.status]
         return f'[AI] [{badge}] {segment.position}: {segment.source[:70]}' if segment.ai_generated else f'[{badge}] {segment.position}: {segment.source[:70]}'
 
     def _on_quality_filter_changed(self, *_args) -> None:
+        """Poproś o indeks QA/TM, gdy wybrany filtr jakości go wymaga."""
         if self.quality_filter.currentData() in {'qa_errors', 'tm_match'}:
             self.search_context_requested.emit()
         else:
             self._refilter()
 
     def set_search_context(self, *, qa_error_ids=None, tm_match_ids=None) -> None:
-        """Update cached quality indexes; call when project/QA/TM changes."""
+        """Zaktualizuj zbiory ID segmentów z błędami QA i dopasowaniami TM."""
         if qa_error_ids is not None:
             self._qa_error_ids = set(qa_error_ids)
         if tm_match_ids is not None:
@@ -227,12 +237,15 @@ class SegmentEditor(QWidget):
 
     @property
     def search_valid(self) -> bool:
+        """Czy bieżący wzorzec wyszukiwania jest poprawny."""
         return self._search_valid
 
     def all_segments(self) -> list[Segment]:
+        """Zwróć kopię listy wszystkich segmentów projektu."""
         return list(self._segments)
 
     def clear_filters(self) -> None:
+        """Przywróć domyślne filtry i pustą frazę wyszukiwania."""
         self.search_edit.clear()
         self.status_filter.setCurrentText('ALL')
         self.quality_filter.setCurrentIndex(0)
@@ -246,14 +259,16 @@ class SegmentEditor(QWidget):
         self._refilter()
 
     def visible_segments(self) -> list[Segment]:
+        """Zwróć kopię listy segmentów widocznych po filtrowaniu."""
         return list(self._visible)
 
     @property
     def search_busy(self) -> bool:
-        """True until the visible results reflect the currently entered filters."""
+        """Czy widoczne wyniki nie odpowiadają jeszcze wprowadzonym filtrom."""
         return self._search_busy
 
     def _invalidate_search(self) -> int:
+        """Unieważnij trwające wyszukiwanie i zwróć nowy numer generacji."""
         self._search_generation += 1
         self._search_timer.stop()
         if self._search_cancel is not None:
@@ -265,6 +280,7 @@ class SegmentEditor(QWidget):
         return self._search_generation
 
     def _query(self) -> SearchQuery:
+        """Zbuduj zapytanie wyszukiwania z bieżących ustawień filtrów."""
         return SearchQuery(
             self.search_edit.text(),
             scope=self.search_scope.currentData() or 'both',
@@ -277,7 +293,11 @@ class SegmentEditor(QWidget):
         )
 
     def _refilter(self, *_args) -> None:
-        """Debounce large searches; never rebuild thousands of QListWidgetItems."""
+        """Odśwież listę po zmianie filtrów.
+
+        Małe projekty są filtrowane od razu, duże – z opóźnieniem w wątku tła;
+        błędny regex jest zgłaszany natychmiast.
+        """
         if self._search_closed:
             return
         token = self._invalidate_search()
@@ -315,6 +335,7 @@ class SegmentEditor(QWidget):
             self._search_timer.start()
 
     def _submit_background_search(self) -> None:
+        """Uruchom filtrowanie migawki indeksu w wątku tła i odbierz wynik przez ``QTimer``."""
         if self._search_closed:
             return
         token = self._search_generation
@@ -354,6 +375,7 @@ class SegmentEditor(QWidget):
         QTimer.singleShot(0, poll)
 
     def _apply_results(self, indexes: list[int], token: int) -> None:
+        """Pokaż wyniki filtrowania, jeśli są aktualne, zachowując zaznaczenie segmentu."""
         if token != self._search_generation or self._search_closed:
             return
         current = self.current_segment()
@@ -382,7 +404,7 @@ class SegmentEditor(QWidget):
         self._load_current(self.segment_list.currentRow())
 
     def stop_search(self) -> None:
-        """Cancel all pending lookups when the window or application closes."""
+        """Anuluj oczekujące wyszukiwania przy zamykaniu okna lub aplikacji."""
         if self._search_closed:
             return
         self._search_closed = True
@@ -391,14 +413,17 @@ class SegmentEditor(QWidget):
             self._search_executor.shutdown(wait=False, cancel_futures=True)
 
     def closeEvent(self, event) -> None:
+        """Zatrzymaj wyszukiwanie w tle przed zamknięciem widżetu."""
         self.stop_search()
         super().closeEvent(event)
 
     def current_segment(self) -> Segment | None:
+        """Zwróć bieżący segment z listy widocznych albo ``None``."""
         row = self.segment_list.currentRow()
         return self._visible[row] if 0 <= row < len(self._visible) else None
 
     def selected_segments(self) -> list[Segment]:
+        """Zwróć zaznaczone segmenty (lub bieżący, gdy nic nie zaznaczono)."""
         selected_ids = {item.data(256) for item in self.segment_list.selectedItems()}
         if selected_ids:
             return [segment for segment in self._visible if segment.id in selected_ids]
@@ -406,6 +431,7 @@ class SegmentEditor(QWidget):
         return [current] if current is not None else []
 
     def _load_current(self, row: int) -> None:
+        """Wczytaj bieżący segment (lub jego szkic) do pól edytora."""
         if self._applying_results:
             return
         segment = self.current_segment()
@@ -426,10 +452,11 @@ class SegmentEditor(QWidget):
 
     @property
     def has_unsaved_drafts(self) -> bool:
+        """Czy istnieją niezapisane szkice tłumaczeń."""
         return bool(self._drafts)
 
     def _draft_changed(self) -> None:
-        """Keep editor text only in RAM; no Segment or SQLite modifications."""
+        """Zapamiętaj szkic Target i komentarza tylko w RAM – bez zmian w ``Segment`` i SQLite."""
         if self._loading:
             return
         segment = self.current_segment()
@@ -445,18 +472,21 @@ class SegmentEditor(QWidget):
         self.draft_changed.emit(segment, target)
 
     def _on_comment_changed(self) -> None:
+        """Obsłuż zmianę komentarza jako zmianę szkicu."""
         self._draft_changed()
 
     def _on_target_changed(self) -> None:
+        """Obsłuż zmianę Target jako zmianę szkicu."""
         self._draft_changed()
 
     def _on_status_combo_changed(self, value: str) -> None:
-        """Status drop-down is a preview; only workflow actions commit."""
+        """Lista statusów jest tylko podglądem – zatwierdza dopiero przycisk akcji."""
         if self._loading or self.current_segment() is None:
             return
         self.draft_label.setText('Wybierz przycisk zapisu statusu')
 
     def request_action(self, status: SegmentStatus | str) -> None:
+        """Zgłoś akcję workflow (zapis z wybranym statusem) dla bieżącego szkicu."""
         segment = self.current_segment()
         if segment is None or segment.id is None:
             return
@@ -466,7 +496,7 @@ class SegmentEditor(QWidget):
         self.action_requested.emit(segment, status, target, comment)
 
     def accept_saved_segment(self, persisted: Segment) -> None:
-        """Update in-memory listing only AFTER a successful atomic database commit."""
+        """Zaktualizuj segment na liście dopiero po udanym zapisie w bazie i usuń jego szkic."""
         existing = next((s for s in self._segments if s.id == persisted.id), None)
         if existing is None:
             return
@@ -480,7 +510,7 @@ class SegmentEditor(QWidget):
         self._refilter()
 
     def set_selected_status(self, status: SegmentStatus | str) -> int:
-        """Legacy workflow commands count as explicit actions, not typing."""
+        """Zmień status zaznaczonych segmentów jako jawną akcję (polecenia z menu)."""
         resolved = SegmentStatus(status)
         segments = self.selected_segments()
         if resolved is SegmentStatus.NEW:
@@ -499,11 +529,11 @@ class SegmentEditor(QWidget):
         return len(segments)
 
     def confirm_current(self) -> None:
-        """Ctrl+Enter is equivalent to the explicit Zapisz button."""
+        """Ctrl+Enter działa jak przycisk Zapisz (status ``TRANSLATED``)."""
         self.request_action(SegmentStatus.TRANSLATED)
 
     def select_segment_by_id(self, segment_id: int, reveal: bool = True) -> bool:
-        """Select by database id, supporting in-flight large-project filters."""
+        """Zaznacz segment po ID bazy; z ``reveal`` wyczyść filtry, które go ukrywają."""
         def visible_row() -> int | None:
             return next((i for i, segment in enumerate(self._visible) if segment.id == segment_id), None)
 
@@ -529,14 +559,19 @@ class SegmentEditor(QWidget):
 
 
     def insert_target_text(self, text: str) -> None:
-        """Insert glossary text at the current Target cursor position."""
+        """Wstaw tekst (np. termin glosariusza) w miejscu kursora w Target."""
         cursor = self.target_edit.textCursor()
         cursor.insertText(text)
         self.target_edit.setTextCursor(cursor)
         self.target_edit.setFocus()
 
     def jump_to_next(self, kind: str, *, backwards: bool = False, anchor_id: int | None = None) -> bool:
-        """Move to next untranslated or QA-flagged segment, with wraparound."""
+        """Przejdź do następnego (lub poprzedniego) segmentu bez tłumaczenia albo z błędem QA.
+
+        Wyszukiwanie zawija się na końcu listy. Zwraca ``False``, gdy brak kandydatów.
+
+        :raises ValueError: nieznany rodzaj nawigacji.
+        """
         if kind not in {'untranslated', 'qa_errors'}:
             raise ValueError('Unknown navigation type')
         candidates = sorted(self._segments, key=lambda s: (s.position, s.id or 0))
@@ -557,11 +592,13 @@ class SegmentEditor(QWidget):
         return False
 
     def next_segment(self) -> None:
+        """Przejdź do następnego segmentu na liście."""
         row = self.segment_list.currentRow()
         if row + 1 < self.segment_list.count():
             self.segment_list.setCurrentRow(row + 1)
 
     def previous_segment(self) -> None:
+        """Przejdź do poprzedniego segmentu na liście."""
         row = self.segment_list.currentRow()
         if row > 0:
             self.segment_list.setCurrentRow(row - 1)

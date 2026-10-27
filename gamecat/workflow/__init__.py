@@ -1,4 +1,4 @@
-"""Workflow helpers for translation status and project progress."""
+"""Workflow statusów tłumaczenia i postęp projektu."""
 
 from .status import ProjectProgress, confirmed_translation_status
 

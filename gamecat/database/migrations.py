@@ -1,3 +1,4 @@
+"""Migracje schematu glosariusza."""
 from __future__ import annotations
 
 import logging
@@ -27,13 +28,14 @@ CREATE TABLE IF NOT EXISTS glossary_translations (
 
 
 def _table_exists(connection, name: str) -> bool:
+    """Sprawdź, czy w bazie istnieje tabela o podanej nazwie."""
     return connection.fetchone(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
     ) is not None
 
 
 def migrate_glossary_schema(connection: sqlite3.Connection) -> None:
-    """Create the 0.7 glossary schema and migrate legacy 0.6 rows atomically."""
+    """Utwórz schemat glosariusza 0.7 i atomowo przenieś wiersze z wersji 0.6."""
     legacy_exists = _table_exists(connection, 'glossary')
     with connection:
         connection.execute(_TERMS_SQL)

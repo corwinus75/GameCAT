@@ -1,15 +1,19 @@
-# Przekazanie GameCAT 1.0 na Moodle
+# GameCAT – projekt zaliczeniowy
 
-Zgodnie z materiałami prowadzącego na Moodle należy umieścić dokument **PDF, Markdown albo TXT** zawierający link do repozytorium z kodem źródłowym oraz krótką informację, gdzie znajduje się projekt.
+**Przedmiot:** Zaawansowane techniki programowania w języku Python  
+**Autor:** [imię i nazwisko, nr albumu]  
+**Data oddania:** [data]
 
-**Uzupełnij przed oddaniem:**
+**Repozytorium:** [adres HTTPS repozytorium]  
+**Gałąź / wersja:** `main`, wersja 1.2.6  
+**Lokalizacja projektu:** katalog główny repozytorium (punkt wejścia `main.py`)
 
-> Projekt: GameCAT 1.0 — desktopowy program CAT do lokalizacji gier.  
-> Repozytorium: [TU WKLEJ RZECZYWISTY ADRES HTTPS REPOZYTORIUM]  
-> Katalog projektu: katalog główny repozytorium, `main.py`.  
-> Wersja wydania: tag `v1.0.0`.  
-> Uruchomienie: `python -m pip install -r requirements.txt`, następnie `python main.py`.  
-> README, mapowanie wymagań i wyniki benchmarku: `README.md`, `benchmarks/`.  
-> Testy: `python -m pytest -q`.
+**Uruchomienie:**
 
-Projekt zawiera również `docs/project_report.md`, `docs/defense_10min.md` i `docs/gui_acceptance_checklist.md`. Zaplanuj pokaz działania na około 10 minut. Dokument powinien być poprawiony o Twoje imię i nazwisko, datę i realny adres repozytorium. **GameCAT_1.0_history.bundle** jest kopią historii Git i nie zastępuje opublikowanego repozytorium.
+```bash
+python -m pip install -r requirements.txt
+python main.py
+python -m pytest -q
+```
+
+Opis projektu, tabela mapowania zagadnień na kod, wyniki benchmarku GIL z wnioskami oraz opis napotkanych problemów znajdują się w pliku `README.md` w katalogu głównym repozytorium. Skrypt pomiarowy i wyniki: katalog `benchmarks/`.

@@ -1,7 +1,8 @@
-"""OpenAI Responses API translation and cancellable, budget-aware batches.
+"""Tłumaczenie przez OpenAI Responses API oraz przerywalne zadania wsadowe z limitem kosztu.
 
-Source/TM/glossary are passed as untrusted data; instructions explicitly prohibit
-following commands embedded in translated text. No API keys are logged or persisted.
+Source, TM i glosariusz są przekazywane jako niezaufane dane; instrukcje
+wprost zabraniają wykonywania poleceń osadzonych w tłumaczonym tekście.
+Klucze API nie są logowane ani zapisywane w projekcie.
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ DEFAULT_INSTRUCTIONS = (
 
 @dataclass(frozen=True, slots=True)
 class AISettings:
+    """Ustawienia tłumaczenia AI projektu: model, instrukcje, ceny tokenów i limit odpowiedzi."""
     model: str = 'gpt-5-mini'
     instructions: str = ''
     input_price_per_million: float = 0.0  # user-supplied; 0 means price unknown
@@ -35,6 +37,10 @@ class AISettings:
     max_output_tokens: int = 1024
 
     def __post_init__(self) -> None:
+        """Zwaliduj ustawienia.
+
+        :raises ValueError: pusta nazwa modelu, limit tokenów poza 64–16384 lub nieprawidłowa cena.
+        """
         if not self.model.strip():
             raise ValueError('Nazwa modelu nie może być pusta')
         if self.max_output_tokens < 64 or self.max_output_tokens > 16384:
@@ -46,12 +52,14 @@ class AISettings:
 
 @dataclass(frozen=True, slots=True)
 class AIUsage:
+    """Liczba tokenów wejściowych i wyjściowych zużytych przez żądanie."""
     input_tokens: int = 0
     output_tokens: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class AIResult:
+    """Wynik tłumaczenia AI: tekst, model, zużycie tokenów, szacowany koszt i ostrzeżenia QA."""
     translation: str
     model: str
     usage: AIUsage
@@ -61,6 +69,7 @@ class AIResult:
 
 @dataclass(frozen=True, slots=True)
 class BatchItem:
+    """Wynik AI dla jednego segmentu z zapamiętanym stanem Source/Target sprzed tłumaczenia."""
     segment_id: int
     original_source: str
     original_target: str
@@ -69,6 +78,7 @@ class BatchItem:
 
 @dataclass(slots=True)
 class BatchReport:
+    """Podsumowanie zadania wsadowego: wyniki, błędy, pominięcia, koszt i powód zatrzymania."""
     results: list[BatchItem] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     skipped_existing: int = 0
@@ -80,7 +90,10 @@ class BatchReport:
 
 
 def estimate_cost(usage: AIUsage, settings: AISettings) -> float:
-    """Estimated USD, not a billing quote; pricing is supplied by the user."""
+    """Oszacuj koszt w USD na podstawie cen podanych przez użytkownika (to nie jest faktura).
+
+    :raises ValueError: gdy ceny modelu nie zostały podane.
+    """
     if settings.input_price_per_million <= 0 or settings.output_price_per_million <= 0:
         raise ValueError('Brak cen modelu za milion tokenów; podaj ceny przed tłumaczeniem wsadowym')
     return ((usage.input_tokens * settings.input_price_per_million) +
@@ -88,6 +101,7 @@ def estimate_cost(usage: AIUsage, settings: AISettings) -> float:
 
 
 def quote_prompt_context(source: str) -> str:
+    """Zakoduj tekst źródłowy jako JSON, aby model traktował go jako dane, a nie instrukcje."""
     return json.dumps({'source': source}, ensure_ascii=False)
 
 
@@ -96,6 +110,10 @@ def build_translation_input(
     glossary: Iterable[GlossaryTerm] = (),
     tm: Iterable[TranslationMemoryEntry] = (),
 ) -> str:
+    """Zbuduj wejście żądania (JSON): Source, pary języków, pasujące terminy i przykłady z TM.
+
+    :raises ValueError: gdy segment przekracza limit 20 000 znaków.
+    """
     if len(source) > 20000:
         raise ValueError('Segment jest zbyt długi dla tłumaczenia AI (limit 20 000 znaków)')
     terminology = [
@@ -115,9 +133,10 @@ def build_translation_input(
 
 
 class OpenAITranslator:
-    """Client injection makes tests independent of credentials and network."""
+    """Tłumacz korzystający z klienta OpenAI; wstrzykiwany klient pozwala testować bez sieci i klucza."""
 
     def __init__(self, client: Any):
+        """Zapamiętaj klienta OpenAI (lub jego atrapę w testach)."""
         self.client = client
 
     def translate(
@@ -125,6 +144,10 @@ class OpenAITranslator:
         glossary: Iterable[GlossaryTerm], tm: Iterable[TranslationMemoryEntry],
         settings: AISettings,
     ) -> AIResult:
+        """Przetłumacz jeden segment i od razu sprawdź wynik regułami QA.
+
+        :raises ValueError: pusta odpowiedź lub brak informacji o zużyciu tokenów.
+        """
         items = list(glossary)
         input_payload = build_translation_input(source, source_lang, target_lang, items, tm)
         response = self.client.responses.create(
@@ -150,17 +173,20 @@ class OpenAITranslator:
         return AIResult(target, settings.model, token_usage, cost, issues)
 
     def test_connection(self, model: str) -> None:
-        """API request that checks the key and access to the selected model."""
+        """Wykonaj lekkie żądanie sprawdzające klucz API i dostęp do wybranego modelu."""
         self.client.models.retrieve(model)
 
 
 class BatchTranslator:
-    """Sequential requests in a worker thread. Stops before likely budget overrun.
+    """Wsadowe tłumaczenie segmentów kolejnymi żądaniami w wątku roboczym.
 
-    Estimates are deliberately conservative but cannot be a hard API billing limit.
+    Przed każdym żądaniem szacuje koszt najgorszego przypadku i zatrzymuje się,
+    zanim przekroczy budżet. Oszacowanie jest celowo zawyżone, ale nie zastępuje
+    twardego limitu rozliczeń po stronie API.
     """
 
     def __init__(self, translator: OpenAITranslator):
+        """Zapamiętaj tłumacza wykonującego pojedyncze żądania."""
         self.translator = translator
 
     def translate_items(
@@ -171,6 +197,14 @@ class BatchTranslator:
         cancel: threading.Event | None = None,
         on_progress: Callable[[int, int, BatchReport], None] | None = None,
     ) -> BatchReport:
+        """Przetłumacz puste segmenty z listy (ID, Source, Target) z limitem kosztu i liczby pozycji.
+
+        Segmenty z istniejącym tłumaczeniem są pomijane. Zadanie można przerwać
+        zdarzeniem *cancel*; *on_progress* jest wywoływane po każdej pozycji.
+        Błędy uwierzytelnienia, limitu i złego żądania przerywają cały wsad.
+
+        :raises ValueError: nieprawidłowy budżet, limit pozycji lub brak cen modelu.
+        """
         if budget_usd <= 0 or not math.isfinite(budget_usd):
             raise ValueError('Limit kosztu musi być dodatnią kwotą USD')
         if not 1 <= max_items <= 1000:

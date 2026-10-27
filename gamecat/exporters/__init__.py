@@ -1,1 +1,1 @@
-"""Exporters for supported localization formats."""
+"""Eksportery prostych formatów TXT, CSV i JSON."""

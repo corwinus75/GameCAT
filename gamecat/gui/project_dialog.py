@@ -1,10 +1,13 @@
+"""Okno tworzenia nowego projektu."""
 from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit
 from gamecat.models.project import Project
 
 
 class ProjectDialog(QDialog):
-    """Collect metadata for a new translation project."""
+    """Zbiera metadane nowego projektu tłumaczeniowego."""
+
     def __init__(self, parent=None):
+        """Zbuduj formularz nazwy, języków i formatu projektu."""
         super().__init__(parent)
         self.setWindowTitle('Nowy projekt')
         self.name_edit = QLineEdit()
@@ -21,4 +24,5 @@ class ProjectDialog(QDialog):
         layout.addRow(buttons)
 
     def project(self) -> Project:
+        """Zwróć niezapisany obiekt projektu z danymi z formularza."""
         return Project(self.name_edit.text().strip(), self.source_edit.text().strip(), self.target_edit.text().strip(), self.format_combo.currentText())

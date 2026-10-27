@@ -1,4 +1,4 @@
-"""Qt smoke test, executed when PySide6 is available (offscreen supported)."""
+"""Test dymny Qt panelu AI; uruchamiany, gdy dostępny jest PySide6 (także offscreen)."""
 from __future__ import annotations
 
 import os

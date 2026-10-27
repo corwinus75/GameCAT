@@ -1,9 +1,10 @@
+"""Konfiguracja modułu ``logging`` dla aplikacji."""
 from pathlib import Path
 import logging
 
 
 def configure_logging(path: Path = Path('gamecat.log')) -> None:
-    """Configure application logging to UTF-8 file and stderr."""
+    """Skieruj logi aplikacji do pliku UTF-8 i na stderr (poziom INFO)."""
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     for handler in list(root.handlers):

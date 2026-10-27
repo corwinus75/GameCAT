@@ -1,5 +1,4 @@
 from pathlib import Path
-import pytest
 
 from gamecat.database.connection import open_database
 from gamecat.database.schema import initialize_schema

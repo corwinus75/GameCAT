@@ -1,1 +1,1 @@
-"""OpenAI-only assisted translation, isolated from GUI and project persistence."""
+"""Tłumaczenie wspomagane przez OpenAI API, odizolowane od GUI i zapisu projektu."""

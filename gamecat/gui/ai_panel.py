@@ -1,4 +1,4 @@
-"""Project-scoped OpenAI API settings, previews, and batch progress UI."""
+"""Panel OpenAI: ustawienia projektu, podgląd propozycji i postęp tłumaczenia wsadowego."""
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
@@ -13,6 +13,7 @@ from gamecat.gui.wrapping import enable_list_word_wrap
 
 
 class AIPanel(QWidget):
+    """Panel ustawień i wyników tłumaczenia AI; akcje zgłasza sygnałami do okna głównego."""
     save_requested = Signal()
     test_requested = Signal()
     translate_requested = Signal()
@@ -22,6 +23,7 @@ class AIPanel(QWidget):
     batch_item_requested = Signal(int)
 
     def __init__(self, parent=None):
+        """Zbuduj formularz ustawień, przyciski akcji, podgląd i listę wyników wsadu."""
         super().__init__(parent)
         content = QWidget(self)
         layout = QVBoxLayout(content)
@@ -138,6 +140,7 @@ class AIPanel(QWidget):
         parent_layout.addWidget(scroller)
 
     def get_settings(self) -> AISettings:
+        """Zwróć ustawienia AI wprowadzone w formularzu."""
         return AISettings(
             model=self.model.currentText().strip(), instructions=self.instructions.toPlainText(),
             input_price_per_million=self.input_price.value(),
@@ -146,6 +149,7 @@ class AIPanel(QWidget):
         )
 
     def set_settings(self, settings: AISettings) -> None:
+        """Wypełnij formularz ustawieniami projektu i wyczyść podgląd."""
         self.model.setCurrentText(settings.model)
         self.instructions.setPlainText(settings.instructions)
         self.input_price.setValue(settings.input_price_per_million)
@@ -154,12 +158,14 @@ class AIPanel(QWidget):
         self.clear_preview()
 
     def clear_preview(self) -> None:
+        """Wyczyść podgląd propozycji i listę wyników wsadu."""
         self.preview.clear()
         self.preview_caption.setText('Nie wygenerowano propozycji.')
         self.apply_button.setEnabled(False)
         self.suggestions.clear()
 
     def display_result(self, segment_id: int, result: AIResult) -> None:
+        """Pokaż propozycję AI dla segmentu wraz z tokenami, kosztem i ostrzeżeniami QA."""
         self.preview_caption.setText(
             f'Segment ID {segment_id} · {result.model} · '
             f'{result.usage.input_tokens}/{result.usage.output_tokens} tokenów · '
@@ -176,6 +182,7 @@ class AIPanel(QWidget):
         self.apply_button.setEnabled(True)
 
     def show_batch(self, report: BatchReport) -> None:
+        """Pokaż wyniki zadania wsadowego i podsumowanie kosztów oraz powodów zatrzymania."""
         self.suggestions.clear()
         for item in report.results:
             kind = 'QA!' if item.result.qa_warnings else 'OK'
@@ -193,6 +200,7 @@ class AIPanel(QWidget):
         )
 
     def set_running(self, running: bool) -> None:
+        """Przełącz dostępność przycisków w trakcie i po zakończeniu żądań API."""
         self.batch_button.setEnabled(not running)
         self.single_button.setEnabled(not running)
         self.test_button.setEnabled(not running)
