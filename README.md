@@ -1,5 +1,14 @@
 # GameCAT
 
+### GameCAT 1.2.4 — wydajne wyszukiwanie w dużych projektach
+
+- Filtrowanie dużych projektów (>1500 segmentów) działa w tle z opóźnieniem 180 ms od ostatniego wpisanego znaku; spóźnione wyniki są anulowane lub odrzucane.
+- Listę segmentów przeniesiono z `QListWidget` na wirtualny `QListView` + `QAbstractListModel`. Odtąd GUI nie tworzy od nowa osobnego obiektu `QListWidgetItem` dla każdej linii po każdym wpisanym znaku.
+- Indeks Source/Target przyspiesza wyszukiwanie bez regex; pozostają wszystkie filtry, sortowania, regex, nawigacja, statusy i niezapisane szkice.
+- Nowy skrypt `python -m benchmarks.search_124 --segments 50000` mierzy algorytm filtrowania (bez pomiaru renderowania Qt).
+- [Szczegóły, ograniczenia i testy 1.2.4](docs/releases/1.2.4.md).
+
+
 ### GameCAT 1.2.3 — zawijanie długich wpisów w panelach
 
 - Historia, TM, QA, glosariusz i OpenAI zawijają długie teksty oraz dopasowują wysokości wierszy po zmianie szerokości panelu.
@@ -36,7 +45,7 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
 - Edytowalne pole **Kontekst / komentarz** pod Target; `FormatProfile.comment_field` mapuje komentarze z CSV/TSV/XLSX/JSON/XML. Komentarze pozostają w SQLite i nie zmieniają statusu workflow.
 - [Pełny opis 1.1 i lista testów ręcznych](docs/releases/1.1.md).
 
-## Funkcje wersji 1.2.2
+## Funkcje bieżącej wersji
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,

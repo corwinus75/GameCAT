@@ -1022,6 +1022,9 @@ class MainWindow(QMainWindow):
     def replace_targets(self) -> None:
         """Apply previewed changes to Target only, never silently to reviewed segments."""
         assert self.project_service is not None and self.current_project is not None
+        if self.segment_editor.search_busy:
+            QMessageBox.information(self, 'GameCAT', 'Wyszukiwanie jeszcze trwa. Spróbuj ponownie po wyświetleniu wyników.')
+            return
         if not self.segment_editor.search_valid:
             QMessageBox.warning(self, 'GameCAT', 'Popraw nieprawidłowy wzorzec wyszukiwania.')
             return
@@ -1582,5 +1585,6 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self.project_service = None
+        self.segment_editor.stop_search()
         self._ai_executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

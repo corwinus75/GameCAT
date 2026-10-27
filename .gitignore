@@ -6,3 +6,12 @@ __pycache__/
 *.log
 .venv/
 .idea/
+
+# Local project databases and credentials
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.db
+*.secret
+api_key.txt

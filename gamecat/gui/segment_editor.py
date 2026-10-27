@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, Future
+from threading import Event
+import re
 from datetime import datetime, timezone
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -12,8 +15,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -22,9 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 from gamecat.gui.glossary_source_edit import GlossarySourceEdit
+from gamecat.gui.segment_list import SegmentListView
 from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.workflow.status import ProjectProgress, confirmed_translation_status, status_after_target_edit
-from gamecat.search.operations import SearchQuery, filter_segments
+from gamecat.search.operations import SearchQuery
+from gamecat.search.index import SegmentSearchIndex
 
 
 _STATUS_BADGES = {
@@ -54,6 +57,20 @@ class SegmentEditor(QWidget):
         self._tm_match_ids: set[int] = set()
         self._search_valid = True
         self._drafts: dict[int, tuple[str, str]] = {}
+        self._search_index = SegmentSearchIndex([])
+        self._search_executor: ThreadPoolExecutor | None = None
+        self._search_future: Future | None = None
+        self._search_cancel: Event | None = None
+        self._search_generation = 0
+        self._search_busy = False
+        self._search_closed = False
+        self._applying_results = False
+        self._selection_hint: int | None = None
+        self._pending_selection_id: int | None = None
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(180)
+        self._search_timer.timeout.connect(self._submit_background_search)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText('Szukaj w Source/Target (Ctrl+F)…')
@@ -64,6 +81,7 @@ class SegmentEditor(QWidget):
         self.case_check = QCheckBox('Aa')
         self.case_check.setToolTip('Rozróżniaj wielkość liter')
         self.search_error = QLabel('')
+        self.search_progress = QLabel('')
         self.search_error.setStyleSheet('color: #b03a2e')
         self.search_error.setVisible(False)
         self.quality_filter = QComboBox()
@@ -77,7 +95,7 @@ class SegmentEditor(QWidget):
         self.refresh_filters_button = QPushButton('Odśwież filtry')
         self.status_filter = QComboBox()
         self.status_filter.addItems(['ALL', *[s.value for s in SegmentStatus]])
-        self.segment_list = QListWidget()
+        self.segment_list = SegmentListView()
         self.segment_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.source_edit = GlossarySourceEdit()
         self.target_edit = QPlainTextEdit()
@@ -109,6 +127,7 @@ class SegmentEditor(QWidget):
         filters.addWidget(self.sort_descending)
         filters.addWidget(self.refresh_filters_button)
         filters.addStretch(1)
+        filters.addWidget(self.search_progress)
         filters.addWidget(self.search_error)
 
         texts = QWidget()
@@ -164,12 +183,23 @@ class SegmentEditor(QWidget):
         QShortcut(QKeySequence('Ctrl+F'), self, activated=self.search_edit.setFocus)
 
     def set_segments(self, segments: list[Segment], *, preserve_drafts: bool = False) -> None:
+        self._invalidate_search()
         if preserve_drafts:
             valid_ids = {segment.id for segment in segments}
             self._drafts = {sid: draft for sid, draft in self._drafts.items() if sid in valid_ids}
         else:
             self._drafts.clear()
+        self._selection_hint = self.current_segment().id if self.current_segment() else None
         self._segments = segments
+        # Never leave rows from the previously opened project actionable while
+        # the new project's initial asynchronous search is pending.
+        self._applying_results = True
+        try:
+            self._visible = []
+            self.segment_list.set_rows([])
+        finally:
+            self._applying_results = False
+        self._search_index = SegmentSearchIndex(segments)
         self._refilter()
 
     def project_progress(self) -> ProjectProgress:
@@ -218,10 +248,24 @@ class SegmentEditor(QWidget):
     def visible_segments(self) -> list[Segment]:
         return list(self._visible)
 
-    def _refilter(self, *_args) -> None:
-        current = self.current_segment()
-        current_id = current.id if current else None
-        query = SearchQuery(
+    @property
+    def search_busy(self) -> bool:
+        """True until the visible results reflect the currently entered filters."""
+        return self._search_busy
+
+    def _invalidate_search(self) -> int:
+        self._search_generation += 1
+        self._search_timer.stop()
+        if self._search_cancel is not None:
+            self._search_cancel.set()
+        if self._search_future is not None:
+            self._search_future.cancel()
+        self._search_cancel = None
+        self._search_future = None
+        return self._search_generation
+
+    def _query(self) -> SearchQuery:
+        return SearchQuery(
             self.search_edit.text(),
             scope=self.search_scope.currentData() or 'both',
             regex=self.regex_check.isChecked(),
@@ -231,50 +275,124 @@ class SegmentEditor(QWidget):
             sort=self.sort_combo.currentData() or 'position',
             descending=self.sort_descending.isChecked(),
         )
+
+    def _refilter(self, *_args) -> None:
+        """Debounce large searches; never rebuild thousands of QListWidgetItems."""
+        if self._search_closed:
+            return
+        token = self._invalidate_search()
+        query = self._query()
+        # Invalid patterns are reported immediately even for huge projects.
         try:
-            filtered = filter_segments(
-                self._segments, query,
-                qa_error_ids=self._qa_error_ids,
-                tm_match_ids=self._tm_match_ids,
-            )
-        except ValueError as exc:
+            if query.regex and query.phrase:
+                re.compile(query.phrase, 0 if query.case_sensitive else re.IGNORECASE)
+        except re.error as exc:
             self._search_valid = False
-            self.search_error.setText(f'Błąd wzorca: {exc}')
+            self._search_busy = False
+            self.search_progress.clear()
+            self.search_error.setText(f'Błąd wzorca: Invalid search regex: {exc}')
             self.search_error.setVisible(True)
             self.search_edit.setStyleSheet('border: 1px solid #b03a2e;')
-            self._visible = []
-            self.segment_list.clear()
-            self._loading = True
-            try:
-                self.source_edit.clear()
-                self.target_edit.clear()
-                self.comment_edit.clear()
-            finally:
-                self._loading = False
+            self._apply_results([], token)
             return
         self._search_valid = True
         self.search_error.setVisible(False)
         self.search_edit.setStyleSheet('')
-        self._visible = filtered
-        self.segment_list.clear()
-        for segment in self._visible:
-            item = QListWidgetItem(self._item_text(segment))
-            item.setData(256, segment.id)
-            item.setToolTip(f'{segment.status.value} — segment {segment.position}')
-            self.segment_list.addItem(item)
-        if self._visible:
-            row = next((i for i, segment in enumerate(self._visible)
-                        if current_id is not None and segment.id == current_id), 0)
-            self.segment_list.setCurrentRow(row)
-        else:
-            self._loading = True
+        if len(self._segments) <= 1500:
+            # Small projects retain the immediate search behaviour.
             try:
-                self.source_edit.clear()
-                self.target_edit.clear()
-                self.comment_edit.clear()
-                self.status_combo.setCurrentText(SegmentStatus.NEW.value)
-            finally:
-                self._loading = False
+                indexes = self._search_index.search(query,
+                    qa_error_ids=self._qa_error_ids, tm_match_ids=self._tm_match_ids)
+            except ValueError as exc:
+                self._search_valid = False
+                self.search_error.setText(str(exc))
+                self.search_error.setVisible(True)
+                indexes = []
+            self._apply_results(indexes or [], token)
+        else:
+            self._search_busy = True
+            self.search_progress.setText('Wyszukiwanie…')
+            self._search_timer.start()
+
+    def _submit_background_search(self) -> None:
+        if self._search_closed:
+            return
+        token = self._search_generation
+        if self._search_executor is None:
+            self._search_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gamecat-search')
+        cancel = Event()
+        self._search_cancel = cancel
+        query = self._query()
+        # Index and quality filters are immutable snapshots used only by the worker.
+        index = self._search_index
+        future = self._search_executor.submit(index.search, query,
+            qa_error_ids=frozenset(self._qa_error_ids),
+            tm_match_ids=frozenset(self._tm_match_ids), cancel=cancel)
+        self._search_future = future
+
+        def poll() -> None:
+            if self._search_closed or token != self._search_generation:
+                return
+            if not future.done():
+                QTimer.singleShot(30, poll)
+                return
+            try:
+                indexes = future.result()
+            except ValueError as exc:
+                self._search_valid = False
+                self.search_error.setText(str(exc))
+                self.search_error.setVisible(True)
+                indexes = []
+            except Exception as exc:
+                self._search_valid = False
+                self.search_error.setText(f'Błąd wyszukiwania: {exc}')
+                self.search_error.setVisible(True)
+                indexes = []
+            if indexes is not None:
+                self._apply_results(indexes, token)
+
+        QTimer.singleShot(0, poll)
+
+    def _apply_results(self, indexes: list[int], token: int) -> None:
+        if token != self._search_generation or self._search_closed:
+            return
+        current = self.current_segment()
+        current_id = (self._pending_selection_id if self._pending_selection_id is not None
+                      else current.id if current else self._selection_hint)
+        # Creating thousands of QListWidgetItem objects was the primary UI freeze.
+        self._visible = [self._segments[i] for i in indexes]
+        self._search_busy = False
+        self.search_progress.clear()
+        self._applying_results = True
+        try:
+            self.segment_list.set_rows(self._visible)
+            if self._visible:
+                row = next((i for i, segment in enumerate(self._visible)
+                            if current_id is not None and segment.id == current_id), 0)
+                self.segment_list.setCurrentRow(row)
+            else:
+                self.segment_list.setCurrentRow(-1)
+        finally:
+            self._applying_results = False
+        self._selection_hint = None
+        if self._pending_selection_id is not None and any(
+            segment.id == self._pending_selection_id for segment in self._visible
+        ):
+            self._pending_selection_id = None
+        self._load_current(self.segment_list.currentRow())
+
+    def stop_search(self) -> None:
+        """Cancel all pending lookups when the window or application closes."""
+        if self._search_closed:
+            return
+        self._search_closed = True
+        self._invalidate_search()
+        if self._search_executor is not None:
+            self._search_executor.shutdown(wait=False, cancel_futures=True)
+
+    def closeEvent(self, event) -> None:
+        self.stop_search()
+        super().closeEvent(event)
 
     def current_segment(self) -> Segment | None:
         row = self.segment_list.currentRow()
@@ -288,6 +406,8 @@ class SegmentEditor(QWidget):
         return [current] if current is not None else []
 
     def _load_current(self, row: int) -> None:
+        if self._applying_results:
+            return
         segment = self.current_segment()
         self._loading = True
         try:
@@ -356,6 +476,7 @@ class SegmentEditor(QWidget):
         existing.updated_at = persisted.updated_at
         existing.ai_generated = persisted.ai_generated
         self._drafts.pop(persisted.id, None)
+        self._search_index = self._search_index.updated(existing)
         self._refilter()
 
     def set_selected_status(self, status: SegmentStatus | str) -> int:
@@ -367,6 +488,7 @@ class SegmentEditor(QWidget):
             for segment in segments:
                 segment.status = SegmentStatus.NEW
             self.segments_status_modified.emit(segments)
+            self._search_index = SegmentSearchIndex(self._segments)
             self._refilter()
             return len(segments)
         for segment in segments:
@@ -381,24 +503,28 @@ class SegmentEditor(QWidget):
         self.request_action(SegmentStatus.TRANSLATED)
 
     def select_segment_by_id(self, segment_id: int, reveal: bool = True) -> bool:
-        """Select a segment by database id; optionally clear filters that hide it."""
-
+        """Select by database id, supporting in-flight large-project filters."""
         def visible_row() -> int | None:
-            return next(
-                (i for i, segment in enumerate(self._visible) if segment.id == segment_id),
-                None,
-            )
+            return next((i for i, segment in enumerate(self._visible) if segment.id == segment_id), None)
 
         row = visible_row()
-        if row is None and reveal:
-            self.search_edit.clear()
-            self.status_filter.setCurrentText('ALL')
-            self.quality_filter.setCurrentIndex(0)
-            row = visible_row()
-        if row is None:
+        if row is not None:
+            self.segment_list.setCurrentRow(row)
+            self.target_edit.setFocus()
+            return True
+        if not reveal or not any(s.id == segment_id for s in self._segments):
             return False
-        self.segment_list.setCurrentRow(row)
-        self.target_edit.setFocus()
+        self._pending_selection_id = segment_id
+        self.search_edit.clear()
+        self.status_filter.setCurrentText('ALL')
+        self.quality_filter.setCurrentIndex(0)
+        row = visible_row()
+        if row is not None and not self.search_busy:
+            self.segment_list.setCurrentRow(row)
+            self._pending_selection_id = None
+            self.target_edit.setFocus()
+        # For large projects the selection will be applied when the async
+        # result arrives; do not claim that the segment is absent meanwhile.
         return True
 
 
