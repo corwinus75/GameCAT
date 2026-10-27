@@ -44,6 +44,17 @@ class MainWindow(QMainWindow):
         self.project_path: Path | None = None
         self.project_service: ProjectService | None = None
         self._busy = False
+        # Async callbacks can fire as soon as widget signals are connected.
+        # Initialize every generation counter, future, and lifecycle flag first.
+        self._closing = False
+        self._tm_generation = 0
+        self._qa_generation = 0
+        self._quality_generation = 0
+        self._content_generation = 0
+        self._tm_future: Future | None = None
+        self._qa_future: Future | None = None
+        self._quality_future: Future | None = None
+        self._pending_qa_jump: tuple[bool, int | None] | None = None
         self._ai_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='gamecat-openai')
         self._ai_cancel = Event()
         self._ai_running = False
