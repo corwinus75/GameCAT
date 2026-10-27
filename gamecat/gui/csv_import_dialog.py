@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
 from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout
+
+from gamecat.importers.csv_format import read_csv_headers, suggest_source_columns
 
 
 class CsvImportDialog(QDialog):
     """Let the user map CSV columns to GameCAT key/source/target fields."""
 
     NO_TARGET = '(brak)'
+    NO_KEY = '(brak klucza — według kolejności)'
 
     def __init__(self, path: Path, parent=None):
         super().__init__(parent)
@@ -20,6 +22,7 @@ class CsvImportDialog(QDialog):
         self.source_combo = QComboBox()
         self.target_combo = QComboBox()
         self.comment_combo = QComboBox()
+        self.key_combo.addItem(self.NO_KEY)
         self.key_combo.addItems(fields)
         self.source_combo.addItems(fields)
         self.target_combo.addItem(self.NO_TARGET)
@@ -28,9 +31,14 @@ class CsvImportDialog(QDialog):
         self.comment_combo.addItems(fields)
 
         self._select_best(self.key_combo, ('key', 'id', 'string_id', 'stringid'))
-        self._select_best(self.source_combo, ('source', 'english', 'en', 'text'))
+        self._select_best(self.source_combo, ('source', 'english', 'en', 'text', 'loca', 'localization', 'original', 'value', 'content', 'string'))
         self._select_best(self.target_combo, ('target', 'polish', 'pl', 'translation'))
         self._select_best(self.comment_combo, ('comment', 'context', 'speaker', 'notes'))
+        key, source, target = suggest_source_columns(fields)
+        self.key_combo.setCurrentText(key if key is not None else self.NO_KEY)
+        self.source_combo.setCurrentText(source)
+        if target is not None:
+            self.target_combo.setCurrentText(target)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -47,16 +55,7 @@ class CsvImportDialog(QDialog):
 
     @staticmethod
     def _read_fields(path: Path) -> list[str]:
-        with path.open('r', encoding='utf-8-sig', newline='') as handle:
-            reader = csv.reader(handle)
-            try:
-                fields = next(reader)
-            except StopIteration as exc:
-                raise ValueError('Plik CSV jest pusty.') from exc
-        fields = [field.strip() for field in fields if field.strip()]
-        if not fields:
-            raise ValueError('Plik CSV nie zawiera nagłówków kolumn.')
-        return fields
+        return read_csv_headers(path)
 
     @staticmethod
     def _select_best(combo: QComboBox, candidates: tuple[str, ...]) -> None:
@@ -66,10 +65,10 @@ class CsvImportDialog(QDialog):
                 combo.setCurrentIndex(lookup[candidate.casefold()])
                 return
 
-    def columns(self) -> tuple[str, str, str | None]:
+    def columns(self) -> tuple[str | None, str, str | None]:
         target = self.target_combo.currentText()
         return (
-            self.key_combo.currentText(),
+            None if self.key_combo.currentText() == self.NO_KEY else self.key_combo.currentText(),
             self.source_combo.currentText(),
             None if target == self.NO_TARGET else target,
         )

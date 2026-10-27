@@ -185,8 +185,8 @@ def update_readme(readme: Path, table: str) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Benchmark GIL: analiza TM sekwencyjnie / wątki / procesy.')
-    parser.add_argument('--segments', type=int, default=600)
-    parser.add_argument('--tm', type=int, default=1200, help='liczba wpisów TM')
+    parser.add_argument('--segments', type=int, default=800)
+    parser.add_argument('--tm', type=int, default=1600, help='liczba wpisów TM')
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--workers', type=int, default=os.cpu_count() or 1)
     parser.add_argument('--seed', type=int, default=2026)

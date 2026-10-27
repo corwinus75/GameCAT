@@ -10,6 +10,7 @@ from tempfile import NamedTemporaryFile
 import xml.etree.ElementTree as ET
 
 from gamecat.importers.base import ImportedSegment
+from gamecat.importers.csv_format import detect_csv_delimiter
 from gamecat.importers.translation_importer import ImportedTranslation
 from gamecat.localization.profiles import FormatProfile
 from gamecat.localization.xlsx import patch_table, read_table, write_workbook
@@ -113,7 +114,7 @@ def _table_records(path: Path, profile: FormatProfile) -> list[dict[str, str]]:
         names = rows[0]
         return [{name: (row[i] if i < len(row) else '') for i, name in enumerate(names)} for row in rows[1:]]
     with path.open('r', encoding='utf-8-sig', newline='') as fp:
-        reader = csv.DictReader(fp, delimiter='\t' if profile.format == 'tsv' else ',')
+        reader = csv.DictReader(fp, delimiter='\t' if profile.format == 'tsv' else detect_csv_delimiter(path))
         if not reader.fieldnames:
             raise ValueError('Empty table')
         return list(reader)
@@ -338,7 +339,8 @@ def export_translations(segments: Iterable[Segment], path: Path, profile: Format
     elif profile.format in {'csv', 'tsv'}:
         from io import StringIO
         buffer = StringIO(newline='')
-        delimiter = '\t' if profile.format == 'tsv' else ','
+        delimiter = ('\t' if profile.format == 'tsv' else
+                     detect_csv_delimiter(template_path) if template_path is not None else ',')
         if template_path is not None:
             with template_path.open('r', encoding='utf-8-sig', newline='') as fp:
                 reader = csv.DictReader(fp, delimiter=delimiter)

@@ -18,6 +18,7 @@ from gamecat.exporters.csv_exporter import export_csv
 from gamecat.exporters.json_exporter import export_json
 from gamecat.importers.txt_importer import import_txt
 from gamecat.importers.csv_importer import import_csv
+from gamecat.importers.csv_format import read_csv_headers, suggest_source_columns
 from gamecat.importers.json_importer import import_json
 from gamecat.importers.translation_importer import (
     ImportedTranslation,
@@ -373,7 +374,7 @@ class ProjectService:
         self,
         project: Project,
         path: Path,
-        csv_columns: tuple[str, str, str | None] | None = None,
+        csv_columns: tuple[str | None, str, str | None] | None = None,
     ) -> list[Segment]:
         if project.id is None:
             raise ValueError('project must be persisted before import')
@@ -381,7 +382,9 @@ class ProjectService:
         if suffix == '.txt':
             imported = import_txt(path)
         elif suffix == '.csv':
-            key_column, source_column, target_column = csv_columns or ('id', 'source', 'target')
+            key_column, source_column, target_column = (
+                csv_columns if csv_columns is not None else suggest_source_columns(read_csv_headers(path))
+            )
             imported = import_csv(path, key_column, source_column, target_column,
                                   self.get_format_profile(project, 'csv').comment_field)
         elif suffix == '.json' and not self.has_format_profile(project, 'json'):
@@ -407,7 +410,7 @@ class ProjectService:
         self,
         project: Project,
         path: Path,
-        csv_columns: tuple[str, str, str | None] | None = None,
+        csv_columns: tuple[str | None, str, str | None] | None = None,
     ) -> Future[list[Segment]]:
         return self.io.submit(self._import_file, project, path, csv_columns)
 

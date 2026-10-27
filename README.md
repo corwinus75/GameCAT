@@ -1,5 +1,12 @@
 # GameCAT
 
+### GameCAT 1.2.5 — naprawa importu CSV z lokalizacji gier
+
+- Importer CSV automatycznie wykrywa separator `,`, `;`, tabulator lub `|` na podstawie nagłówka pliku, z zachowaniem cytowanych wartości i oryginalnych sekwencji `\n`.
+- Okno mapowania rozpoznaje również `Id` i `Loca`, a przy braku kolumny ID pozwala wybrać brak klucza. Przykładowy plik `com.ownedbygravity.fg2.invasion.EN.csv` importuje 7 segmentów bez utraty danych.
+- Import tłumaczeń i eksport do oryginalnego szablonu CSV używają tego samego rozpoznanego separatora.
+- [Opis poprawki i instrukcja importu](docs/releases/1.2.5.md).
+
 ### GameCAT 1.2.4 — wydajne wyszukiwanie w dużych projektach
 
 - Filtrowanie dużych projektów (>1500 segmentów) działa w tle z opóźnieniem 180 ms od ostatniego wpisanego znaku; spóźnione wyniki są anulowane lub odrzucane.
@@ -141,14 +148,6 @@ Wydanie poprawkowe zgodne z bazami SQLite 1.0.0 (bez migracji schematu):
 - Dodano testy regresyjne logiki workflow, izolacji odczytów SQLite oraz metod GUI niezależnie od PySide6. Testy integracyjne Qt pozostają przygotowane do uruchomienia na komputerze z PySide6.
 
 Zobacz [notatki wydania 1.0.1](docs/releases/1.0.1.md).
-
-## Wydanie 1.0 — materiały zaliczeniowe
-
-- [Raport projektu](docs/project_report.md) — architektura, wymagania, testy, GIL, ograniczenia.
-- [Plan 10-minutowej obrony](docs/defense_10min.md) — scenariusz demonstracji i pytania.
-- [Testy ręczne GUI](docs/gui_acceptance_checklist.md) — czynności do sprawdzenia na komputerze z PySide6.
-- [Instrukcja przekazania projektu na Moodle](docs/moodle_submission.md) — repozytorium musi zostać opublikowane przez właściciela.
-- [Informacje o wydaniu](docs/releases/1.0.md) — zmiany i znane ograniczenia.
 
 W ramach finalizacji poprawiono również bezpieczeństwo importu już przetłumaczonego pliku: nowy Target unieważnia poprzednie zatwierdzenie (`REVIEWED`/`APPROVED`), natomiast import identycznego tekstu nie odbiera statusu. Klucz OpenAI API nie należy do danych projektu.
 

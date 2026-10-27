@@ -6,6 +6,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from gamecat.importers.csv_format import detect_csv_delimiter, read_csv_headers
+
 
 @dataclass(frozen=True, slots=True)
 class ImportedTranslation:
@@ -25,14 +27,16 @@ def import_translation_csv(
     key_column: str | None,
     target_column: str,
 ) -> Iterator[ImportedTranslation]:
+    fields = read_csv_headers(path)
     with path.open('r', encoding='utf-8-sig', newline='') as handle:
-        reader = csv.DictReader(handle)
-        fields = reader.fieldnames or []
+        reader = csv.DictReader(handle, delimiter=detect_csv_delimiter(path))
         if target_column not in fields:
             raise ValueError(f'Missing CSV column: {target_column}')
         if key_column is not None and key_column not in fields:
             raise ValueError(f'Missing CSV column: {key_column}')
         for position, row in enumerate(reader, 1):
+            if None in row or any(value is None for value in row.values()):
+                raise ValueError(f'Malformed CSV record at row {position + 1}: wrong column count')
             key = row[key_column] if key_column is not None else None
             yield ImportedTranslation(
                 target=row[target_column],

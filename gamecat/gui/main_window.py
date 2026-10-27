@@ -1110,7 +1110,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'GameCAT', f'Nieobsługiwany format pliku: {path.suffix or "brak rozszerzenia"}')
             return
 
-        csv_columns: tuple[str, str, str | None] | None = None
+        csv_columns: tuple[str | None, str, str | None] | None = None
         if path.suffix.casefold() == '.csv':
             try:
                 csv_dialog = CsvImportDialog(path, self)
@@ -1124,7 +1124,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, 'GameCAT', 'Kolumna klucza i tekstu źródłowego muszą być różne.')
                 return
             self.project_service.set_format_profile(self.current_project, FormatProfile(
-                'csv', key_field=csv_columns[0], source_field=csv_columns[1],
+                'csv', key_field=csv_columns[0] or '', source_field=csv_columns[1],
                 target_field=csv_columns[2] or 'target',
                 comment_field=csv_dialog.comment_column() or '',
             ))
