@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gamecat.gui.glossary_source_edit import GlossarySourceEdit
 from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.workflow.status import ProjectProgress, confirmed_translation_status, status_after_target_edit
 from gamecat.search.operations import SearchQuery, filter_segments
@@ -38,7 +39,9 @@ class SegmentEditor(QWidget):
     """Source/target editor with navigation, searching and workflow statuses."""
 
     segment_changed = Signal(object)
-    segment_modified = Signal(object)
+    segment_modified = Signal(object)  # Legacy signal for explicit external operations.
+    draft_changed = Signal(object, str)
+    action_requested = Signal(object, object, str, str)
     segments_status_modified = Signal(object)
     search_context_requested = Signal()
 
@@ -50,6 +53,7 @@ class SegmentEditor(QWidget):
         self._qa_error_ids: set[int] = set()
         self._tm_match_ids: set[int] = set()
         self._search_valid = True
+        self._drafts: dict[int, tuple[str, str]] = {}
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText('Szukaj w Source/Target (Ctrl+F)…')
@@ -75,14 +79,19 @@ class SegmentEditor(QWidget):
         self.status_filter.addItems(['ALL', *[s.value for s in SegmentStatus]])
         self.segment_list = QListWidget()
         self.segment_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.source_edit = QPlainTextEdit()
-        self.source_edit.setReadOnly(True)
+        self.source_edit = GlossarySourceEdit()
         self.target_edit = QPlainTextEdit()
         self.comment_edit = QPlainTextEdit()
         self.comment_edit.setPlaceholderText('Komentarz, nazwa postaci, kontekst dialogu…')
         self.comment_edit.setMaximumHeight(100)
         self.status_combo = QComboBox()
         self.status_combo.addItems([s.value for s in SegmentStatus])
+        self.status_combo.setToolTip('Sam wybór statusu nie zapisuje segmentu. Użyj Zapisz, Zatwierdź albo LQA.')
+        self.save_translation_button = QPushButton('Zapisz')
+        self.review_button = QPushButton('Zatwierdź')
+        self.lqa_button = QPushButton('LQA')
+        self.draft_label = QLabel('')
+        self.draft_label.setStyleSheet('color: #a05a00')
 
         controls = QHBoxLayout()
         controls.addWidget(QLabel('Szukaj:'))
@@ -107,7 +116,7 @@ class SegmentEditor(QWidget):
         texts_layout.addWidget(QLabel('Source'))
         texts_layout.addWidget(self.source_edit)
         status_row = QHBoxLayout()
-        status_row.addWidget(QLabel('Status segmentu:'))
+        status_row.addWidget(QLabel('Status (zmiana wymaga przycisku):'))
         status_row.addWidget(self.status_combo)
         status_row.addStretch(1)
         texts_layout.addLayout(status_row)
@@ -115,6 +124,11 @@ class SegmentEditor(QWidget):
         texts_layout.addWidget(self.target_edit)
         texts_layout.addWidget(QLabel('Kontekst / komentarz segmentu'))
         texts_layout.addWidget(self.comment_edit)
+        action_buttons = QHBoxLayout()
+        for button in (self.save_translation_button, self.review_button, self.lqa_button):
+            action_buttons.addWidget(button)
+        action_buttons.addWidget(self.draft_label)
+        texts_layout.addLayout(action_buttons)
 
         splitter = QSplitter()
         splitter.addWidget(self.segment_list)
@@ -138,12 +152,23 @@ class SegmentEditor(QWidget):
         self.target_edit.textChanged.connect(self._on_target_changed)
         self.comment_edit.textChanged.connect(self._on_comment_changed)
         self.status_combo.currentTextChanged.connect(self._on_status_combo_changed)
+        self.save_translation_button.clicked.connect(
+            lambda checked=False: self.request_action(SegmentStatus.TRANSLATED))
+        self.review_button.clicked.connect(
+            lambda checked=False: self.request_action(SegmentStatus.REVIEWED))
+        self.lqa_button.clicked.connect(
+            lambda checked=False: self.request_action(SegmentStatus.APPROVED))
         QShortcut(QKeySequence('Ctrl+Enter'), self, activated=self.confirm_current)
         QShortcut(QKeySequence('Alt+Down'), self, activated=self.next_segment)
         QShortcut(QKeySequence('Alt+Up'), self, activated=self.previous_segment)
         QShortcut(QKeySequence('Ctrl+F'), self, activated=self.search_edit.setFocus)
 
-    def set_segments(self, segments: list[Segment]) -> None:
+    def set_segments(self, segments: list[Segment], *, preserve_drafts: bool = False) -> None:
+        if preserve_drafts:
+            valid_ids = {segment.id for segment in segments}
+            self._drafts = {sid: draft for sid, draft in self._drafts.items() if sid in valid_ids}
+        else:
+            self._drafts.clear()
         self._segments = segments
         self._refilter()
 
@@ -267,8 +292,10 @@ class SegmentEditor(QWidget):
         self._loading = True
         try:
             self.source_edit.setPlainText(segment.source if segment else '')
-            self.target_edit.setPlainText(segment.target if segment else '')
-            self.comment_edit.setPlainText(segment.comment if segment else '')
+            draft = self._drafts.get(segment.id) if segment and segment.id is not None else None
+            self.target_edit.setPlainText(draft[0] if draft else (segment.target if segment else ''))
+            self.comment_edit.setPlainText(draft[1] if draft else (segment.comment if segment else ''))
+            self.draft_label.setText('Niezapisane' if draft else '')
             self.status_combo.setCurrentText(
                 segment.status.value if segment else SegmentStatus.NEW.value
             )
@@ -277,86 +304,81 @@ class SegmentEditor(QWidget):
         if segment:
             self.segment_changed.emit(segment)
 
-    def _on_comment_changed(self) -> None:
+    @property
+    def has_unsaved_drafts(self) -> bool:
+        return bool(self._drafts)
+
+    def _draft_changed(self) -> None:
+        """Keep editor text only in RAM; no Segment or SQLite modifications."""
         if self._loading:
             return
         segment = self.current_segment()
-        if segment is None:
+        if segment is None or segment.id is None:
             return
-        value = self.comment_edit.toPlainText()
-        if value != segment.comment:
-            segment.comment = value
-            segment.updated_at = datetime.now(timezone.utc)
-            # Changing metadata alone must not reset translation workflow/status.
-            self.segment_modified.emit(segment)
+        target = self.target_edit.toPlainText()
+        comment = self.comment_edit.toPlainText()
+        if (target, comment) == (segment.target, segment.comment):
+            self._drafts.pop(segment.id, None)
+        else:
+            self._drafts[segment.id] = (target, comment)
+        self.draft_label.setText('Niezapisane' if segment.id in self._drafts else '')
+        self.draft_changed.emit(segment, target)
+
+    def _on_comment_changed(self) -> None:
+        self._draft_changed()
 
     def _on_target_changed(self) -> None:
-        if self._loading:
-            return
-        segment = self.current_segment()
-        if segment is not None:
-            updated_target = self.target_edit.toPlainText()
-            if updated_target == segment.target:
-                return
-            previous_status = segment.status
-            next_status = status_after_target_edit(previous_status, segment.target, updated_target)
-            segment.target = updated_target
-            segment.status = next_status
-            item = self.segment_list.currentItem()
-            if item is not None:
-                item.setText(self._item_text(segment))
-            if next_status is not previous_status:
-                self._loading = True
-                try:
-                    self.status_combo.setCurrentText(next_status.value)
-                finally:
-                    self._loading = False
-            self.segment_modified.emit(segment)
-            if next_status is not previous_status:
-                self._refilter()
+        self._draft_changed()
 
     def _on_status_combo_changed(self, value: str) -> None:
-        if self._loading:
+        """Status drop-down is a preview; only workflow actions commit."""
+        if self._loading or self.current_segment() is None:
             return
+        self.draft_label.setText('Wybierz przycisk zapisu statusu')
+
+    def request_action(self, status: SegmentStatus | str) -> None:
         segment = self.current_segment()
-        if segment is None:
+        if segment is None or segment.id is None:
             return
-        status = SegmentStatus(value)
-        if segment.status is status:
+        status = SegmentStatus(status)
+        target = self.target_edit.toPlainText()
+        comment = self.comment_edit.toPlainText()
+        self.action_requested.emit(segment, status, target, comment)
+
+    def accept_saved_segment(self, persisted: Segment) -> None:
+        """Update in-memory listing only AFTER a successful atomic database commit."""
+        existing = next((s for s in self._segments if s.id == persisted.id), None)
+        if existing is None:
             return
-        segment.status = status
-        self.segments_status_modified.emit([segment])
+        existing.target = persisted.target
+        existing.status = persisted.status
+        existing.comment = persisted.comment
+        existing.updated_at = persisted.updated_at
+        existing.ai_generated = persisted.ai_generated
+        self._drafts.pop(persisted.id, None)
         self._refilter()
 
     def set_selected_status(self, status: SegmentStatus | str) -> int:
-        resolved = status if isinstance(status, SegmentStatus) else SegmentStatus(status)
+        """Legacy workflow commands count as explicit actions, not typing."""
+        resolved = SegmentStatus(status)
         segments = self.selected_segments()
-        changed = [segment for segment in segments if segment.status is not resolved]
-        if not changed:
-            return 0
-        for segment in changed:
-            segment.status = resolved
-        self.segments_status_modified.emit(changed)
-        self._refilter()
-        return len(changed)
+        if resolved is SegmentStatus.NEW:
+            # This legacy reset stays explicit; NEW has no translation-history entry.
+            for segment in segments:
+                segment.status = SegmentStatus.NEW
+            self.segments_status_modified.emit(segments)
+            self._refilter()
+            return len(segments)
+        for segment in segments:
+            if segment.id is None:
+                continue
+            draft = self._drafts.get(segment.id, (segment.target, segment.comment))
+            self.action_requested.emit(segment, resolved, *draft)
+        return len(segments)
 
     def confirm_current(self) -> None:
-        segment = self.current_segment()
-        if segment is None:
-            return
-        updated_target = self.target_edit.toPlainText()
-        if updated_target != segment.target:
-            # Text-change handler already updated status and provenance.
-            next_status = status_after_target_edit(segment.status, segment.target, updated_target)
-            segment.target = updated_target
-            segment.status = next_status
-        old_status = segment.status
-        segment.status = (confirmed_translation_status(segment.status)
-                          if segment.target.strip() else SegmentStatus.NEW)
-        self.segment_modified.emit(segment)
-        if segment.status is not old_status:
-            self.segments_status_modified.emit([segment])
-        self.next_segment()
+        """Ctrl+Enter is equivalent to the explicit Zapisz button."""
+        self.request_action(SegmentStatus.TRANSLATED)
 
     def select_segment_by_id(self, segment_id: int, reveal: bool = True) -> bool:
         """Select a segment by database id; optionally clear filters that hide it."""

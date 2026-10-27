@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS translation_memory (
 """
 
 
+_SEGMENT_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS segment_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ segment_id INTEGER NOT NULL REFERENCES segments(id) ON DELETE CASCADE,
+ project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ status TEXT NOT NULL CHECK(status IN ('TRANSLATED', 'REVIEWED', 'APPROVED')),
+ target TEXT NOT NULL,
+ created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_segment_history_segment ON segment_history(segment_id, id DESC);
+"""
+
 _AI_SETTINGS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_project_settings (
  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -141,6 +153,7 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
     """Create database objects and migrate the project glossary to schema 0.7."""
     connection.executescript(_SCHEMA)
     migrate_tm_indexes(connection)
+    connection.executescript(_SEGMENT_HISTORY_SCHEMA)
     migrate_glossary_schema(connection)
     connection.executescript(_TM_SETTINGS_SCHEMA)
     migrate_ai_schema(connection)

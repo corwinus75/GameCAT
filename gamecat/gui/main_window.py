@@ -8,14 +8,16 @@ from typing import Callable, TypeVar
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
-from PySide6.QtWidgets import QFileDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QStatusBar, QInputDialog
+from PySide6.QtWidgets import QFileDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QStatusBar, QInputDialog, QDialog, QVBoxLayout
 
 from gamecat.gui.csv_import_dialog import CsvImportDialog
 from gamecat.gui.format_mapping_dialog import FormatMappingDialog
 from gamecat.localization.profiles import FormatProfile
 from gamecat.gui.csv_translation_import_dialog import CsvTranslationImportDialog
 from gamecat.gui.file_formats import export_format_from_path, normalized_export_path
+from gamecat.gui.history_panel import HistoryPanel
 from gamecat.gui.glossary_panel import GlossaryPanel
+from gamecat.gui.context_glossary_panel import ContextGlossaryPanel
 from gamecat.gui.ai_panel import AIPanel
 from gamecat.ai.core import AISettings, AIResult, BatchItem, BatchReport, BatchTranslator
 from gamecat.ai.credentials import CredentialStore, create_openai_translator
@@ -69,29 +71,49 @@ class MainWindow(QMainWindow):
         self.segment_editor = SegmentEditor(self)
         self.setCentralWidget(self.segment_editor)
         self.qa_panel = QAPanel(self)
-        self.glossary_panel = GlossaryPanel(self)
+        self.glossary_dialog = QDialog(self)
+        self.glossary_dialog.setWindowTitle('GameCAT — cały glosariusz')
+        self.glossary_dialog.resize(850, 630)
+        self.glossary_panel = GlossaryPanel(self.glossary_dialog)
+        QVBoxLayout(self.glossary_dialog).addWidget(self.glossary_panel)
+        self.context_glossary_panel = ContextGlossaryPanel(self)
         self.tm_panel = TMPanel(self)
         self.ai_panel = AIPanel(self)
+        self.history_panel = HistoryPanel(self)
+        self._dock_widgets = {}
         for title, widget in (
             ('QA', self.qa_panel),
-            ('Glosariusz', self.glossary_panel),
+            ('Glosariusz', self.context_glossary_panel),
             ('TM', self.tm_panel),
+            ('Historia', self.history_panel),
             ('OpenAI', self.ai_panel),
         ):
             dock = QDockWidget(title, self)
             dock.setWidget(widget)
+            self._dock_widgets[title] = dock
             if title == 'OpenAI':
                 self._ai_dock = dock
             self.addDockWidget(
                 __import__('PySide6').QtCore.Qt.DockWidgetArea.RightDockWidgetArea,
                 dock,
             )
+        # All right-side docks share one tab group on first launch.
+        docks = list(self._dock_widgets.values())
+        for other in docks[1:]:
+            self.tabifyDockWidget(docks[0], other)
+        docks[0].raise_()
         self.tm_panel.target_selected.connect(self.segment_editor.target_edit.setPlainText)
         self.tm_panel.threshold_changed.connect(self._update_tm_threshold)
         self.segment_editor.segment_changed.connect(self._update_current_qa)
         self.segment_editor.segment_changed.connect(self._update_current_tm)
         self.segment_editor.segment_changed.connect(self._update_glossary_context)
         self.segment_editor.segment_modified.connect(self._on_segment_modified)
+        self.segment_editor.action_requested.connect(self._on_segment_action_requested)
+        self.segment_editor.draft_changed.connect(self._on_editor_draft_changed)
+        self.segment_editor.segment_changed.connect(self._update_history)
+        self.segment_editor.segment_changed.connect(
+            lambda segment: self._on_editor_draft_changed(segment, self.segment_editor.target_edit.toPlainText())
+            if segment.id in self.segment_editor._drafts else None)
         self.segment_editor.search_context_requested.connect(self._refresh_search_context)
         self.segment_editor.segments_status_modified.connect(self._on_segments_status_modified)
         self.qa_panel.segment_requested.connect(self._select_qa_segment)
@@ -103,6 +125,9 @@ class MainWindow(QMainWindow):
         self.glossary_panel.import_requested.connect(self._safe_import_glossary)
         self.glossary_panel.export_requested.connect(self._safe_export_glossary)
         self.glossary_panel.target_insert_requested.connect(self.segment_editor.insert_target_text)
+        self.context_glossary_panel.target_insert_requested.connect(self.segment_editor.insert_target_text)
+        self.context_glossary_panel.open_full_requested.connect(self._open_full_glossary)
+        self.segment_editor.source_edit.target_insert_requested.connect(self.segment_editor.insert_target_text)
         self.setStatusBar(QStatusBar())
         self._progress_indicator = QLabel('Postęp: —')
         self._progress_indicator.setToolTip('Postęp tłumaczenia / recenzji / zatwierdzania')
@@ -136,9 +161,9 @@ class MainWindow(QMainWindow):
         self.export_action.triggered.connect(self._safe_export)
         self.export_template_action = QAction('Eksportuj według oryginalnego szablonu…', self)
         self.export_template_action.triggered.connect(self._safe_export_template)
-        self.save_action = QAction('Zapisz', self)
+        self.save_action = QAction('Zapisz segment (TRANSLATED)', self)
         self.save_action.setShortcut(QKeySequence.StandardKey.Save)
-        self.save_action.triggered.connect(self._safe_save)
+        self.save_action.triggered.connect(self._safe_commit_current)
         exit_action = QAction('Wyjście', self)
         exit_action.triggered.connect(self.close)
         for action in (
@@ -249,9 +274,20 @@ class MainWindow(QMainWindow):
         if old is not None and old is not service:
             old.close()
 
+    def _confirm_discard_drafts(self) -> bool:
+        if not self.segment_editor.has_unsaved_drafts:
+            return True
+        return QMessageBox.question(
+            self, 'Niezapisane szkice', 'Odrzucić niezapisane szkice?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) == QMessageBox.StandardButton.Yes
+
     def new_project(self) -> None:
         if self._ai_running:
             QMessageBox.warning(self, 'OpenAI', 'Poczekaj na zakończenie tłumaczenia AI.')
+            return
+        if not self._confirm_discard_drafts():
             return
         dialog = ProjectDialog(self)
         if not dialog.exec():
@@ -290,7 +326,10 @@ class MainWindow(QMainWindow):
         self.project_path = path
         self.segment_editor.clear_filters()
         self.segment_editor.set_segments([])
+        self.history_panel.set_history([])
         self.glossary_panel.set_terms([])
+        self.context_glossary_panel.set_terms([])
+        self.segment_editor.source_edit.set_glossary_terms([])
         self.tm_panel.set_matches([])
         self.tm_panel.set_threshold(0.45)
         self.tm_panel.set_storage_path(None)
@@ -304,6 +343,15 @@ class MainWindow(QMainWindow):
         self._sync_actions()
 
     def open_project_dialog(self) -> None:
+        if getattr(getattr(self, 'segment_editor', None), 'has_unsaved_drafts', False):
+            answer = QMessageBox.question(
+                self, 'Niezapisane szkice',
+                'Odrzucić niezapisane szkice i otworzyć inny projekt?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         if self._ai_running:
             QMessageBox.warning(self, 'OpenAI', 'Poczekaj na zakończenie tłumaczenia AI.')
             return
@@ -347,6 +395,8 @@ class MainWindow(QMainWindow):
         self.current_project = project
         self.project_path = path
         self.glossary_panel.set_terms(service.list_glossary(project.id))
+        self.context_glossary_panel.set_terms(service.list_glossary(project.id))
+        self.segment_editor.source_edit.set_glossary_terms(service.list_glossary(project.id))
         self.tm_panel.set_matches([])
         self.tm_panel.set_threshold(service.get_tm_threshold(project))
         self.tm_panel.set_storage_path(service.tm_database_path(project))
@@ -356,6 +406,7 @@ class MainWindow(QMainWindow):
         self.segment_editor.clear_filters()
         self.segment_editor.set_segments(segments)
         self._refresh_progress()
+        self._update_history(self.segment_editor.current_segment()) if self.segment_editor.current_segment() else self.history_panel.set_history([])
         self.setWindowTitle(f'GameCAT — {project.name}')
         self.statusBar().showMessage(f'Otworzono: {path} ({len(segments)} segmentów)', 4000)
         self._sync_actions()
@@ -366,6 +417,70 @@ class MainWindow(QMainWindow):
         self.project_service.flush_saves()
         self._refresh_autosave_status()
         self.statusBar().showMessage('Projekt zapisany', 2500)
+
+    def _safe_commit_current(self) -> None:
+        """File->Save / Ctrl+S are explicit TRANSLATED commits, not auto-save."""
+        self.segment_editor.request_action(SegmentStatus.TRANSLATED)
+
+    def _update_history(self, segment: Segment) -> None:
+        if self.project_service is None or self.current_project is None or segment.id is None:
+            self.history_panel.set_history([])
+            return
+        try:
+            self.history_panel.set_history(self.project_service.segment_history(self.current_project, segment.id))
+        except Exception as exc:
+            self.history_panel.set_history([])
+            self.statusBar().showMessage(f'Błąd historii: {exc}', 5000)
+
+    def _on_segment_action_requested(
+        self, segment: Segment, status: SegmentStatus, target: str, comment: str,
+    ) -> None:
+        if self.project_service is None or self.current_project is None or segment.id is None:
+            return
+        try:
+            persisted = self.project_service.commit_segment_action(
+                self.current_project, segment.id, target, status, comment=comment)
+        except Exception as exc:
+            QMessageBox.warning(self, 'GameCAT', f'Nie zapisano tłumaczenia:\n{exc}')
+            return
+        self.segment_editor.accept_saved_segment(persisted)
+        self._content_generation += 1
+        self._refresh_autosave_status()
+        self._refresh_progress()
+        current = self.segment_editor.current_segment()
+        if current is not None:
+            self._update_history(current)
+            self._update_current_tm(current)
+            self._update_current_qa(current)
+        self.qa_panel.clear_project_report()
+        self.statusBar().showMessage(f'{status.value}: zapisano segment #{segment.id}', 3500)
+
+    def _on_editor_draft_changed(self, segment: Segment, target: str) -> None:
+        """Live QA and TM work from RAM drafts; never write those drafts to SQLite."""
+        if self.project_service is None or self.current_project is None:
+            return
+        preview = Segment(segment.source, segment.position, segment.key, target,
+                          segment.status, segment.comment, segment.id, segment.project_id)
+        self._update_current_qa(preview)
+        signature = (segment.id, segment.source, target)
+        if signature == self._tm_last_requested:
+            return
+        self._tm_last_requested = signature
+        self._tm_generation += 1
+        token = self._tm_generation
+        if self._tm_future is not None:
+            self._tm_future.cancel()
+        self.tm_panel.set_matches([])
+
+        def refresh_after_edit() -> None:
+            if self._closing or token != self._tm_generation:
+                return
+            current = self.segment_editor.current_segment()
+            if current is None or current.id != segment.id or self.segment_editor.target_edit.toPlainText() != target:
+                return
+            self._update_current_tm(preview)
+
+        QTimer.singleShot(250, refresh_after_edit)
 
     def _safe_save(self) -> None:
         try:
@@ -391,7 +506,8 @@ class MainWindow(QMainWindow):
         if pending:
             self._save_indicator.setText(f'Autosave: zapisuję… ({pending})')
         else:
-            self._save_indicator.setText('Autosave: zapisano')
+            pending_drafts = len(self.segment_editor._drafts)
+            self._save_indicator.setText(f'Szkice niezapisane: {pending_drafts}' if pending_drafts else 'Zapisano')
 
     def _refresh_progress(self) -> None:
         progress = self.segment_editor.project_progress()
@@ -431,16 +547,24 @@ class MainWindow(QMainWindow):
             f'Zmieniono status {len(segments)} segmentów.', 3000
         )
 
-    def _refresh_glossary(self) -> None:
-        if self.project_service is None or self.current_project is None:
-            self.glossary_panel.set_terms([])
-            return
-        self.glossary_panel.set_terms(self.project_service.list_glossary(self.current_project.id))
-        segment = self.segment_editor.current_segment()
-        self.glossary_panel.set_source_context(segment.source if segment else '')
+    def _open_full_glossary(self) -> None:
+        self.glossary_dialog.show()
+        self.glossary_dialog.raise_()
+        self.glossary_dialog.activateWindow()
 
-    def _update_glossary_context(self, segment: Segment) -> None:
-        self.glossary_panel.set_source_context(segment.source)
+    def _refresh_glossary(self) -> None:
+        terms = (self.project_service.list_glossary(self.current_project.id)
+                 if self.project_service is not None and self.current_project is not None else [])
+        self.glossary_panel.set_terms(terms)
+        self.context_glossary_panel.set_terms(terms)
+        self.segment_editor.source_edit.set_glossary_terms(terms)
+        segment = self.segment_editor.current_segment()
+        self._update_glossary_context(segment)
+
+    def _update_glossary_context(self, segment: Segment | None) -> None:
+        source = segment.source if segment else ''
+        self.context_glossary_panel.set_source_context(source)
+        self.glossary_panel.set_source_context(source)
 
     def _after_glossary_change(self, message: str) -> None:
         self._refresh_glossary()
@@ -592,6 +716,12 @@ class MainWindow(QMainWindow):
             self.tm_panel.set_matches([])
             return
         segment_id, source, target, position = segment.id, segment.source, segment.target, segment.position
+        # The editor may display an uncommitted target; use that exact draft
+        # for current-segment highlighting rather than the SQLite snapshot.
+        selected = self.segment_editor.current_segment()
+        target_editor = getattr(self.segment_editor, 'target_edit', None)
+        if selected is not None and selected.id == segment_id and target_editor is not None:
+            target = target_editor.toPlainText()
         self._tm_last_requested = (segment_id, source, target)
         pending = getattr(self, '_tm_future', None)
         if pending is not None:
@@ -611,7 +741,10 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(50, poll)
                 return
             active = self.segment_editor.current_segment()
-            if active is None or active.id != segment_id or active.source != source or active.target != target:
+            active_editor = getattr(self.segment_editor, 'target_edit', None)
+            active_target = active_editor.toPlainText() if active_editor is not None else (active.target if active else None)
+            if (active is None or active.id != segment_id or active.source != source
+                    or active_target != target):
                 return
             try:
                 self.tm_panel.set_matches(future.result())
@@ -745,7 +878,7 @@ class MainWindow(QMainWindow):
     def _reload_segments(self) -> None:
         if self.project_service is None or self.current_project is None:
             return
-        self.segment_editor.set_segments(self.project_service.list_segments(self.current_project.id))
+        self.segment_editor.set_segments(self.project_service.list_segments(self.current_project.id), preserve_drafts=True)
         self._refresh_search_context()
         self._refresh_progress()
         self.qa_panel.clear_project_report()
@@ -1409,6 +1542,16 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f'Zapisano tłumaczenie AI segmentu #{segment_id}.', 5000)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self.segment_editor.has_unsaved_drafts:
+            answer = QMessageBox.question(
+                self, 'Niezapisane tłumaczenia',
+                'Istnieją niezapisane szkice. Zamknąć program i je odrzucić?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
         if self._ai_running:
             answer = QMessageBox.question(
                 self, 'OpenAI', 'Tłumaczenie API nadal trwa. Anulować dalsze żądania i zamknąć?',

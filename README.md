@@ -1,5 +1,12 @@
 # GameCAT
 
+### GameCAT 1.2.2 — historia zatwierdzeń i glosariusz kontekstowy
+
+- Ręczny Target/komentarz są **szkicami w RAM**, nie podlegają autosave. Przycisk **Zapisz** utrwala `TRANSLATED`, **Zatwierdź** — `REVIEWED`, **LQA** — `APPROVED`; każda taka akcja dopisuje migawkę i datę do historii wybranego segmentu w SQLite.
+- Panele QA, TM, Glosariusz, Historia i OpenAI są domyślnie pogrupowane jako zakładki. Pełny słownik otwiera się w osobnym oknie, a karta glosariusza pokazuje wyłącznie terminy występujące w bieżącym Source.
+- Terminy w Source są podkreślone i klikalne; wstawiają wybrany wariant do Target bez automatycznego zapisu.
+- [Dokładne zasady, migracja, scenariusze testów i etapy commitów](docs/releases/1.2.2.md).
+
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
 ### Poprawka 1.1.2 — segmenty w sugestiach TM
@@ -23,7 +30,7 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
 - Edytowalne pole **Kontekst / komentarz** pod Target; `FormatProfile.comment_field` mapuje komentarze z CSV/TSV/XLSX/JSON/XML. Komentarze pozostają w SQLite i nie zmieniają statusu workflow.
 - [Pełny opis 1.1 i lista testów ręcznych](docs/releases/1.1.md).
 
-## Funkcje wersji 1.1.2
+## Funkcje wersji 1.2.2
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
@@ -36,7 +43,7 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
   importem/eksportem CSV+JSON, progiem dopasowania i automatycznym dodawaniem zatwierdzonych segmentów,
 - analiza projektu względem TM (progi 100% / 95–99 / 85–94 / 75–84 / 50–74 / brak) sekwencyjnie, w wątkach lub w procesach, z wsadową pretranslacją dopasowań ≥50% (domyślnie i bez potwierdzenia tylko 100%),
 - zadania I/O przez `ThreadPoolExecutor`,
-- nieblokujący autosave z `Queue`, scalaniem szybkich zmian i `Lock`,
+- kolejka zapisów `SaveQueue` dla operacji API/wsadowych; ręczna edycja używa wyłącznie jawnego zapisu do historii,
 - GUI PySide6,
 - benchmark GIL: sequential / threads / processes.
 

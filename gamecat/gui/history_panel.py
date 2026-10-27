@@ -1,0 +1,23 @@
+"""Persistent, read-only translation approval history for the active segment."""
+from __future__ import annotations
+
+from datetime import datetime
+
+from PySide6.QtWidgets import QGroupBox, QListWidget, QListWidgetItem, QVBoxLayout
+
+
+class HistoryPanel(QGroupBox):
+    def __init__(self, parent=None):
+        super().__init__('Historia', parent)
+        self.list_widget = QListWidget(self)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.list_widget)
+
+    def set_history(self, entries: list[dict]) -> None:
+        self.list_widget.clear()
+        for entry in entries:
+            date = datetime.fromisoformat(entry['created_at']).astimezone().strftime('%Y-%m-%d %H:%M:%S')
+            label = f"{entry['status']}: {entry['target']} — {date}"
+            item = QListWidgetItem(label)
+            item.setToolTip(label)
+            self.list_widget.addItem(item)

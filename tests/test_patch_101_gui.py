@@ -15,23 +15,28 @@ from gamecat.models.translation_memory import TranslationMemoryEntry
 from gamecat.services.project_service import ProjectService
 
 
-def test_manual_change_updates_status_and_progress_without_spurious_changes():
+def test_manual_change_requires_explicit_save():
     app = QApplication.instance() or QApplication([])
     editor = SegmentEditor()
     segment = Segment('Hello', 1, target='Cześć', status=SegmentStatus.APPROVED, id=1)
     editor.set_segments([segment])
     try:
-        changed = []
-        editor.segment_modified.connect(changed.append)
-        editor.target_edit.setPlainText('Cześć')
-        assert segment.status is SegmentStatus.APPROVED and changed == []
+        changes=[]
+        editor.action_requested.connect(lambda *args: changes.append(args))
         editor.target_edit.setPlainText('Witaj')
-        assert segment.status is SegmentStatus.TRANSLATED
-        assert editor.status_combo.currentText() == SegmentStatus.TRANSLATED.value
-        assert editor.project_progress().approved == 0
-        assert changed == [segment]
+        assert segment.status is SegmentStatus.APPROVED
+        assert segment.target == 'Cześć'
+        assert editor.project_progress().approved == 1
+        assert editor.has_unsaved_drafts
+        editor.save_translation_button.click()
+        assert changes[-1][1] is SegmentStatus.TRANSLATED
+        assert changes[-1][2] == 'Witaj'
+        # Only ProjectService may acknowledge a successful database commit.
+        segment.target = 'Witaj'; segment.status = SegmentStatus.TRANSLATED
+        editor.accept_saved_segment(segment)
+        assert not editor.has_unsaved_drafts
         editor.target_edit.clear()
-        assert segment.status is SegmentStatus.NEW
+        assert segment.status is SegmentStatus.TRANSLATED
     finally:
         editor.close()
 
@@ -58,6 +63,11 @@ def test_tm_threshold_and_switching_backend_does_not_reset_ai(tmp_path, monkeypa
             return original(*args, **kwargs)
         monkeypatch.setattr(service, 'find_tm_matches', capture)
         win._update_current_tm(segment)
+        from PySide6.QtTest import QTest
+        for _ in range(60):
+            if seen:
+                break
+            QTest.qWait(25)
         assert seen and seen[-1].get('threshold') is None
         win._safe_use_project_tm_database()
         assert win.ai_panel.get_settings().instructions == 'keep names'

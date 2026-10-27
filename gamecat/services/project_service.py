@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sqlite3
 from pathlib import Path
 from threading import RLock
 import json
@@ -413,6 +414,64 @@ class ProjectService:
     @property
     def pending_save_count(self) -> int:
         return self.save_queue.pending_count
+
+    def commit_segment_action(
+        self, project: Project, segment_id: int, target: str,
+        status: SegmentStatus | str, *, comment: str | None = None,
+    ) -> Segment:
+        """Persist a manual action and immutable history entry in one transaction.
+
+        Edits made in the editor are drafts.  Only this method stores those
+        drafts as the current translation. All actions (including repeated
+        approvals) create a dated audit entry. The returned segment is fresh.
+        """
+        from datetime import datetime, timezone
+        from gamecat.exceptions import DatabaseError
+        if project.id is None:
+            raise ValueError('Project is not persisted')
+        resolved = SegmentStatus(status)
+        if resolved is SegmentStatus.NEW:
+            raise ValueError('History actions require a translated status')
+        if not isinstance(target, str) or not target.strip():
+            raise ValueError('Nie można zatwierdzić pustego tłumaczenia.')
+        self.flush_saves()
+        if resolved is SegmentStatus.APPROVED:
+            self._ensure_tm_project(project)
+        stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        try:
+            with self.connection:
+                row = self.connection.fetchone(
+                    'SELECT * FROM segments WHERE id=? AND project_id=?',
+                    (segment_id, project.id),
+                )
+                if row is None:
+                    raise KeyError(segment_id)
+                existing_comment = row['comment'] if comment is None else comment
+                self.connection.execute("""UPDATE segments SET target=?, status=?, comment=?,
+                    updated_at=?, ai_generated=0 WHERE id=? AND project_id=?""",
+                    (target, resolved.value, existing_comment, stamp, segment_id, project.id))
+                self.connection.execute("""INSERT INTO segment_history
+                    (segment_id,project_id,status,target,created_at) VALUES (?,?,?,?,?)""",
+                    (segment_id,project.id,resolved.value,target,stamp))
+        except sqlite3.Error as exc:
+            raise DatabaseError(f'Nie można zapisać segmentu i historii: {exc}') from exc
+        segment = self.segments.get(segment_id)
+        if resolved is SegmentStatus.APPROVED and segment.source.strip():
+            self.translation_memory.create_unique_many([TranslationMemoryEntry(
+                segment.source, segment.target, project.source_language,
+                project.target_language, origin_project=project.name,
+            )])
+            self.invalidate_tm_cache()
+        return segment
+
+    def segment_history(self, project: Project, segment_id: int) -> list[dict]:
+        """Return journal snapshots newest first; never include unsaved drafts."""
+        if project.id is None:
+            return []
+        rows = self.connection.fetchall("""SELECT id, status, target, created_at
+            FROM segment_history WHERE project_id=? AND segment_id=? ORDER BY id DESC""",
+            (project.id, segment_id))
+        return [dict(row) for row in rows]
 
     def queue_segment_save(self, segment: Segment) -> None:
         self.save_queue.enqueue(segment)
