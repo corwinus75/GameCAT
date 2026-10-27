@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QGroupBox, QListWidget, QListWidgetItem, QTabWidget, QVBoxLayout, QWidget
 
+from gamecat.gui.wrapping import enable_list_word_wrap
 from gamecat.qa.project_scan import ProjectQAReport
 from gamecat.qa.rules import QAIssue
 
@@ -17,6 +18,8 @@ class QAPanel(QGroupBox):
         self.tabs = QTabWidget(self)
         self.current_list = QListWidget()
         self.project_list = QListWidget()
+        enable_list_word_wrap(self.current_list)
+        enable_list_word_wrap(self.project_list)
         self.project_list.itemDoubleClicked.connect(self._request_segment)
 
         current_page = QWidget()

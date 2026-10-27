@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from gamecat.ai.core import AIResult, AISettings, BatchReport
+from gamecat.gui.wrapping import enable_list_word_wrap
 
 
 class AIPanel(QWidget):
@@ -36,6 +37,7 @@ class AIPanel(QWidget):
         self.model.setEditable(True)
         self.model.addItems(['gpt-5-mini', 'gpt-5.1', 'gpt-4.1-mini'])
         self.instructions = QPlainTextEdit()
+        self.instructions.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.instructions.setPlaceholderText('Instrukcje stylu i kontekstu dla tego projektu…')
         self.instructions.setMaximumHeight(110)
         self.input_price = QDoubleSpinBox()
@@ -107,6 +109,7 @@ class AIPanel(QWidget):
         self.progress_label.setWordWrap(True)
         layout.addWidget(self.progress_label)
         self.suggestions = QListWidget()
+        enable_list_word_wrap(self.suggestions)
         self.suggestions.setMaximumHeight(120)
         self.suggestions.itemDoubleClicked.connect(
             lambda item: self.batch_item_requested.emit(self.suggestions.row(item))
@@ -117,6 +120,7 @@ class AIPanel(QWidget):
         self.preview_caption.setWordWrap(True)
         layout.addWidget(self.preview_caption)
         self.preview = QPlainTextEdit()
+        self.preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.preview.setPlaceholderText('Propozycja tłumaczenia AI do ręcznego zatwierdzenia…')
         self.preview.setMinimumHeight(100)
         layout.addWidget(self.preview)
@@ -175,7 +179,7 @@ class AIPanel(QWidget):
         self.suggestions.clear()
         for item in report.results:
             kind = 'QA!' if item.result.qa_warnings else 'OK'
-            self.suggestions.addItem(f'[{kind}] #{item.segment_id}: {item.original_source[:75]}')
+            self.suggestions.addItem(f'[{kind}] #{item.segment_id}: {item.original_source}')
         reasons = []
         if report.cancelled:
             reasons.append('anulowano')

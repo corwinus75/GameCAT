@@ -4,6 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QListWidget, QPushButton, QMenu
 
+from gamecat.gui.wrapping import enable_list_word_wrap
 from gamecat.glossary.spans import term_spans
 from gamecat.models.glossary import GlossaryTerm
 
@@ -18,6 +19,7 @@ class ContextGlossaryPanel(QGroupBox):
         self._visible: list[GlossaryTerm] = []
         self._source = ''
         self.list_widget = QListWidget(self)
+        enable_list_word_wrap(self.list_widget)
         self.full_button = QPushButton('Otwórz cały słownik', self)
         layout = QVBoxLayout(self)
         layout.addWidget(self.list_widget)

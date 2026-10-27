@@ -3,6 +3,7 @@ from PySide6.QtCore import QSignalBlocker, Signal
 from pathlib import Path
 from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSpinBox, QVBoxLayout
 
+from gamecat.gui.wrapping import enable_list_word_wrap
 from gamecat.tm.matcher import TMMatch
 from gamecat.tm.presentation import display_tm_match
 
@@ -15,8 +16,10 @@ class TMPanel(QGroupBox):
         super().__init__('Translation Memory', parent)
         self._matches: list[TMMatch] = []
         self.storage_label = QLabel('TM projektu')
+        self.storage_label.setWordWrap(True)
         self.storage_label.setToolTip('Pamięć TM jest zapisana w bazie projektu.')
         self.list_widget = QListWidget()
+        enable_list_word_wrap(self.list_widget)
         self.list_widget.itemDoubleClicked.connect(self._use_match)
         self.threshold_spin = QSpinBox()
         self.threshold_spin.setRange(0, 100)

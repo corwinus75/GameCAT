@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from gamecat.gui.wrapping import enable_list_word_wrap
 from gamecat.glossary.matching import contains_term
 from gamecat.models.glossary import GlossaryEntry, GlossaryTerm
 
@@ -47,14 +49,19 @@ class GlossaryPanel(QGroupBox):
         self.search_edit.setPlaceholderText('Szukaj terminu lub wariantu…')
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(['Source', 'Warianty Target'])
+        self.table.setWordWrap(True)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
         self.source_edit = QLineEdit()
         self.description_edit = QPlainTextEdit()
+        self.description_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.description_edit.setMaximumHeight(70)
         self.case_sensitive = QCheckBox('Case sensitive')
         self.variants = QListWidget()
+        enable_list_word_wrap(self.variants)
         self.variants.itemDoubleClicked.connect(lambda _item: self._emit_selected_variant())
 
         new_button = QPushButton('Dodaj termin')

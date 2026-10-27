@@ -1,5 +1,11 @@
 # GameCAT
 
+### GameCAT 1.2.3 — zawijanie długich wpisów w panelach
+
+- Historia, TM, QA, glosariusz i OpenAI zawijają długie teksty oraz dopasowują wysokości wierszy po zmianie szerokości panelu.
+- W pełnym glosariuszu zawijane są również komórki tabeli; wyniki wsadu OpenAI pokazują cały tekst Source.
+- [Szczegóły i testy wydania](docs/releases/1.2.3.md).
+
 ### GameCAT 1.2.2 — historia zatwierdzeń i glosariusz kontekstowy
 
 - Ręczny Target/komentarz są **szkicami w RAM**, nie podlegają autosave. Przycisk **Zapisz** utrwala `TRANSLATED`, **Zatwierdź** — `REVIEWED`, **LQA** — `APPROVED`; każda taka akcja dopisuje migawkę i datę do historii wybranego segmentu w SQLite.

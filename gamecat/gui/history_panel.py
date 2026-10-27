@@ -5,11 +5,14 @@ from datetime import datetime
 
 from PySide6.QtWidgets import QGroupBox, QListWidget, QListWidgetItem, QVBoxLayout
 
+from gamecat.gui.wrapping import enable_list_word_wrap
+
 
 class HistoryPanel(QGroupBox):
     def __init__(self, parent=None):
         super().__init__('Historia', parent)
         self.list_widget = QListWidget(self)
+        enable_list_word_wrap(self.list_widget)
         layout = QVBoxLayout(self)
         layout.addWidget(self.list_widget)
 
