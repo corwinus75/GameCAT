@@ -31,13 +31,13 @@ def test_gui_tm_suggestions_respect_project_threshold(tmp_path: Path):
     from concurrent.futures import Future
     thresholds = []
     matches = []
-    segment = SimpleNamespace(id=7, source='Test')
+    segment = SimpleNamespace(id=7, source='Test', target='', position=7)
     real_find = service.find_tm_matches
 
-    def fake_async(project, source, limit=5):
+    def fake_async(project, source, limit=5, **kwargs):
         done = Future()
         thresholds.append(None)  # async call leaves threshold to ProjectService
-        done.set_result(real_find(project, source, limit=limit))
+        done.set_result(real_find(project, source, limit=limit, **kwargs))
         return done
 
     service.find_tm_matches_async = fake_async

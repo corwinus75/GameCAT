@@ -125,7 +125,7 @@ def test_async_tm_does_not_publish_stale_segment_results():
     returned = iter((first, second))
     service = SimpleNamespace(find_tm_matches_async=lambda *_args, **_kwargs: next(returned))
     project = SimpleNamespace(id=42)
-    seg_a, seg_b = SimpleNamespace(id=3, source='a'), SimpleNamespace(id=4, source='b')
+    seg_a, seg_b = SimpleNamespace(id=3, source='a', target='', position=3), SimpleNamespace(id=4, source='b', target='', position=4)
     visible = [seg_a]
     values = []
     stub = SimpleNamespace(_tm_generation=0, _closing=False, project_service=service,

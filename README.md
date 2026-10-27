@@ -2,6 +2,13 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
+### Poprawka 1.1.2 — segmenty w sugestiach TM
+
+- Sugestie TM pokazują **ID segmentów i pozycje w bieżącym projekcie** odpowiadające dokładnie parze Source/Target. Przy wielu identycznych wpisach w projekcie wskazywane są wszystkie segmenty (w razie długiej listy — pełna lista w podpowiedzi).
+- Sugestia stanowiąca dokładną parę Source/Target zaznaczonego segmentu otrzymuje etykietę **BIEŻĄCY** i pogrubienie, a podobieństwo pozostaje prawidłowe (100%, nie sztuczne 101%). Dopasowanie wyłącznie Source nie jest błędnie uznawane za ten sam segment.
+- Wpisy TM bez odpowiednika w bieżącym projekcie otrzymują oznaczenie „brak ID segmentu”; **TM ID** jest wyświetlane osobno i nie jest utożsamiane z ID segmentu.
+- Zmiany Target odświeżają oznaczenie z opóźnieniem podczas pisania, bez publikowania nieaktualnych wyników. Nie zmieniono SQLite; szczegóły: [1.1.2](docs/releases/1.1.2.md).
+
 ### Poprawka 1.1.1 — inicjalizacja asynchronicznego GUI
 
 - Usunięto `AttributeError: 'MainWindow' object has no attribute '_tm_generation'` przy zmianie progu sugestii TM.
@@ -16,7 +23,7 @@ GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji
 - Edytowalne pole **Kontekst / komentarz** pod Target; `FormatProfile.comment_field` mapuje komentarze z CSV/TSV/XLSX/JSON/XML. Komentarze pozostają w SQLite i nie zmieniają statusu workflow.
 - [Pełny opis 1.1 i lista testów ręcznych](docs/releases/1.1.md).
 
-## Funkcje wersji 1.1.1
+## Funkcje wersji 1.1.2
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,

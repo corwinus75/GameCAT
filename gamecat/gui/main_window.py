@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         self._quality_generation = 0
         self._content_generation = 0
         self._tm_future: Future | None = None
+        self._tm_last_requested: tuple[int, str, str] | None = None
         self._qa_future: Future | None = None
         self._quality_future: Future | None = None
         self._pending_qa_jump: tuple[bool, int | None] | None = None
@@ -590,11 +591,17 @@ class MainWindow(QMainWindow):
         if service is None or project is None or segment.id is None or self._closing:
             self.tm_panel.set_matches([])
             return
-        segment_id, source = segment.id, segment.source
+        segment_id, source, target, position = segment.id, segment.source, segment.target, segment.position
+        self._tm_last_requested = (segment_id, source, target)
         pending = getattr(self, '_tm_future', None)
         if pending is not None:
             pending.cancel()
-        future = service.find_tm_matches_async(project, source, limit=5)
+        future = service.find_tm_matches_async(
+            project, source, limit=5,
+            current_segment_id=segment_id,
+            current_target=target,
+            current_position=position,
+        )
         self._tm_future = future
 
         def poll() -> None:
@@ -604,7 +611,7 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(50, poll)
                 return
             active = self.segment_editor.current_segment()
-            if active is None or active.id != segment_id or active.source != source:
+            if active is None or active.id != segment_id or active.source != source or active.target != target:
                 return
             try:
                 self.tm_panel.set_matches(future.result())
@@ -759,6 +766,26 @@ class MainWindow(QMainWindow):
         self._save_modified_segment(segment)
         self._update_current_qa(segment)
         self._refresh_progress()
+        # A Target edit changes which exact TM pair belongs to the selected
+        # segment. Debounce recomputation while typing, invalidate any pending
+        # result immediately, and do not recalculate for comment-only edits.
+        signature = (segment.id, segment.source, segment.target)
+        if signature != self._tm_last_requested:
+            self._tm_last_requested = signature
+            self._tm_generation += 1
+            token = self._tm_generation
+            if self._tm_future is not None:
+                self._tm_future.cancel()
+            self.tm_panel.set_matches([])
+
+            def refresh_after_edit() -> None:
+                if self._closing or token != self._tm_generation:
+                    return
+                selected = self.segment_editor.current_segment()
+                if selected is not None and (selected.id, selected.source, selected.target) == signature:
+                    self._update_current_tm(selected)
+
+            QTimer.singleShot(200, refresh_after_edit)
         if self._pending_qa_jump is not None or self.segment_editor.quality_filter.currentData() in {'qa_errors', 'tm_match'}:
             self._refresh_search_context(force_qa=self._pending_qa_jump is not None)
 

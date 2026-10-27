@@ -1,9 +1,10 @@
 """Contextual translation-memory suggestions and per-project fuzzy threshold."""
 from PySide6.QtCore import QSignalBlocker, Signal
 from pathlib import Path
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QListWidget, QSpinBox, QVBoxLayout
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSpinBox, QVBoxLayout
 
 from gamecat.tm.matcher import TMMatch
+from gamecat.tm.presentation import display_tm_match
 
 
 class TMPanel(QGroupBox):
@@ -51,9 +52,14 @@ class TMPanel(QGroupBox):
         self._matches = matches
         self.list_widget.clear()
         for match in matches:
-            self.list_widget.addItem(
-                f'{match.score:.0%}  {match.entry.source} → {match.entry.target}'
-            )
+            label, tooltip = display_tm_match(match)
+            item = QListWidgetItem(label)
+            item.setToolTip(tooltip)
+            if match.is_current_segment:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            self.list_widget.addItem(item)
 
     def _use_match(self, item) -> None:
         index = self.list_widget.row(item)

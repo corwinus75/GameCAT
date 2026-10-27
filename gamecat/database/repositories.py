@@ -130,6 +130,34 @@ class SegmentRepository:
         """Zwróć iterator czytający segmenty projektu partiami."""
         return SegmentBatchIterator(self.connection, project_id, self._from_row, batch_size)
 
+    def references_for_pairs(
+        self, project_id: int, pairs: Iterable[tuple[str, str]],
+    ) -> dict[tuple[str, str], tuple[tuple[int, int], ...]]:
+        """Map exact TM Source/Target pairs to (segment ID, position) in a project.
+
+        An entry imported from another TM database has no local segment ID.
+        A pair reused by multiple segments returns *all* matching references.
+        """
+        distinct_pairs = list(dict.fromkeys(pairs))
+        if not distinct_pairs:
+            return {}
+        conditions = ' OR '.join('(source=? AND target=?)' for _ in distinct_pairs)
+        params: list[str | int] = [project_id]
+        for source, target in distinct_pairs:
+            params.extend((source, target))
+        with self.connection:
+            rows = self.connection.fetchall(
+                f'SELECT id, position, source, target FROM segments '
+                f'WHERE project_id=? AND ({conditions}) ORDER BY position,id',
+                tuple(params),
+            )
+        grouped: dict[tuple[str, str], list[tuple[int, int]]] = {}
+        for row in rows:
+            grouped.setdefault((row['source'], row['target']), []).append(
+                (int(row['id']), int(row['position']))
+            )
+        return {pair: tuple(refs) for pair, refs in grouped.items()}
+
     def count_for_project(self, project_id: int) -> int:
         with self.connection:
             row = self.connection.fetchone('SELECT COUNT(*) FROM segments WHERE project_id=?', (project_id,))

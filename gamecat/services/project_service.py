@@ -28,7 +28,7 @@ from gamecat.models.project import Project
 from gamecat.models.glossary import GlossaryTerm
 from gamecat.models.segment import Segment, SegmentStatus
 from gamecat.models.translation_memory import TranslationMemoryEntry
-from gamecat.tm.matcher import TMMatch, find_matches
+from gamecat.tm.matcher import TMMatch, TMSegmentReference, find_matches
 from gamecat.tm.exchange import read_tm, write_tm
 from gamecat.tm.analysis import ExecutionMode, TMAnalysisReport, analyze
 from gamecat.exceptions import ImportFormatError
@@ -267,9 +267,18 @@ class ProjectService:
         return self.io.submit(self._calculate_search_snapshot, project, snapshot, qa, tm)
 
     def find_tm_matches_async(
-        self, project: Project, source: str, limit: int = 5,
+        self, project: Project, source: str, limit: int = 5, *,
+        current_segment_id: int | None = None,
+        current_target: str | None = None,
+        current_position: int | None = None,
     ) -> Future[list[TMMatch]]:
-        return self.io.submit(self.find_tm_matches, project, source, limit)
+        """Calculate contextual suggestions off the GUI thread using a snapshot."""
+        return self.io.submit(
+            self.find_tm_matches, project, source, limit,
+            current_segment_id=current_segment_id,
+            current_target=current_target,
+            current_position=current_position,
+        )
 
     def run_project_qa_async(self, project: Project) -> Future[ProjectQAReport]:
         return self.io.submit(self.run_project_qa, project)
@@ -602,9 +611,54 @@ class ProjectService:
         source: str,
         limit: int = 5,
         threshold: float | None = None,
+        *,
+        current_segment_id: int | None = None,
+        current_target: str | None = None,
+        current_position: int | None = None,
     ) -> list[TMMatch]:
         entries = self.get_tm_entries(project)
-        return find_matches(source, entries, limit=limit, threshold=(self.get_tm_threshold(project) if threshold is None else threshold))
+        effective_threshold = self.get_tm_threshold(project) if threshold is None else threshold
+        matches = find_matches(source, entries, limit=limit, threshold=effective_threshold)
+        if current_segment_id is None:
+            # All existing callers (AI, analysis) retain their original behavior
+            # and do not incur additional SQLite reads.
+            return matches
+
+        # Multiple TM entries may share a Source but differ in Target. If the
+        # current bilingual pair exists, show it *first* even if there are more
+        # than 'limit' equally ranked 100% matches.
+        if current_target and limit > 0 and effective_threshold <= 1.0:
+            selected_entry = next(
+                (entry for entry in entries
+                 if entry.source == source and entry.target == current_target), None
+            )
+            if selected_entry is not None:
+                matches = [TMMatch(selected_entry, 1.0)] + [
+                    match for match in matches if match.entry is not selected_entry
+                ]
+                matches = matches[:limit]
+
+        refs_by_pair = self.segments.references_for_pairs(
+            self._tm_project_id(project),
+            ((match.entry.source, match.entry.target) for match in matches),
+        )
+        annotated: list[TMMatch] = []
+        for match in matches:
+            key = (match.entry.source, match.entry.target)
+            refs = [TMSegmentReference(sid, pos) for sid, pos in refs_by_pair.get(key, ())]
+            is_current = bool(current_target) and key == (source, current_target)
+            if not is_current:
+                # During autosave the database may still have the *previous*
+                # translation of the active segment. Use the editor snapshot
+                # as authoritative for that segment, not its stale DB row.
+                refs = [ref for ref in refs if ref.id != current_segment_id]
+            if is_current and not any(ref.id == current_segment_id for ref in refs):
+                # The GUI Target can still be in autosave's debounce queue.
+                if current_position is not None:
+                    refs.append(TMSegmentReference(current_segment_id, current_position))
+            refs.sort(key=lambda ref: (ref.position, ref.id))
+            annotated.append(TMMatch(match.entry, match.score, tuple(refs), is_current))
+        return annotated
 
     @measure_time
     def analyze_project_tm(
