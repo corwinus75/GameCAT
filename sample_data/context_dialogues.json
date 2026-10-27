@@ -1,0 +1,6 @@
+{
+  "dialogues": [
+    {"id": "guard_01", "en": "The gate is closed.", "pl": "", "speaker": "Strażnik przy głównej bramie"},
+    {"id": "wizard_01", "en": "The spell is ready!", "pl": "Zaklęcie jest gotowe!", "speaker": "Mag na wieży"}
+  ]
+}

@@ -14,6 +14,7 @@ class FormatProfile:
     source_field: str = 'source'
     target_field: str = 'target'
     sheet_name: str = ''
+    comment_field: str = ''  # Optional source context (speaker, location, notes)
 
     def __post_init__(self) -> None:
         if self.format not in SUPPORTED_FORMATS:
@@ -21,7 +22,7 @@ class FormatProfile:
         if not self.source_field.strip() or not self.target_field.strip():
             raise ValueError('Source and Target fields are required')
         if self.format == 'json':
-            for field in (self.records_path, self.key_field, self.source_field, self.target_field):
+            for field in (self.records_path, self.key_field, self.source_field, self.target_field, self.comment_field):
                 if field and (field.startswith('.') or field.endswith('.') or '..' in field):
                     raise ValueError(f'Invalid JSON mapping path: {field}')
 

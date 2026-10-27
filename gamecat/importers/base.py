@@ -7,3 +7,4 @@ class ImportedSegment:
     source: str
     key: str | None = None
     target: str = ""
+    comment: str = ""

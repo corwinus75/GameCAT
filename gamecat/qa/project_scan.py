@@ -38,11 +38,12 @@ def scan_segments(
     glossary: Iterable[GlossaryTerm | GlossaryEntry] = (),
 ) -> ProjectQAReport:
     """Run QA for all segments and retain only segments that have issues."""
-    segment_list = list(segments)
     glossary_list = list(glossary)
     results: list[SegmentQAResult] = []
-    for segment in segment_list:
+    count = 0
+    for segment in segments:
+        count += 1
         issues = validate_segment(segment.source, segment.target, glossary_list)
         if issues:
             results.append(SegmentQAResult(segment, tuple(issues)))
-    return ProjectQAReport(len(segment_list), results)
+    return ProjectQAReport(count, results)

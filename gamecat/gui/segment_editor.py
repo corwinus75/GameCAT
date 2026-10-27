@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -77,6 +78,9 @@ class SegmentEditor(QWidget):
         self.source_edit = QPlainTextEdit()
         self.source_edit.setReadOnly(True)
         self.target_edit = QPlainTextEdit()
+        self.comment_edit = QPlainTextEdit()
+        self.comment_edit.setPlaceholderText('Komentarz, nazwa postaci, kontekst dialogu…')
+        self.comment_edit.setMaximumHeight(100)
         self.status_combo = QComboBox()
         self.status_combo.addItems([s.value for s in SegmentStatus])
 
@@ -109,6 +113,8 @@ class SegmentEditor(QWidget):
         texts_layout.addLayout(status_row)
         texts_layout.addWidget(QLabel('Target'))
         texts_layout.addWidget(self.target_edit)
+        texts_layout.addWidget(QLabel('Kontekst / komentarz segmentu'))
+        texts_layout.addWidget(self.comment_edit)
 
         splitter = QSplitter()
         splitter.addWidget(self.segment_list)
@@ -130,6 +136,7 @@ class SegmentEditor(QWidget):
         self.sort_descending.toggled.connect(self._refilter)
         self.refresh_filters_button.clicked.connect(lambda checked=False: self.search_context_requested.emit())
         self.target_edit.textChanged.connect(self._on_target_changed)
+        self.comment_edit.textChanged.connect(self._on_comment_changed)
         self.status_combo.currentTextChanged.connect(self._on_status_combo_changed)
         QShortcut(QKeySequence('Ctrl+Enter'), self, activated=self.confirm_current)
         QShortcut(QKeySequence('Alt+Down'), self, activated=self.next_segment)
@@ -216,6 +223,7 @@ class SegmentEditor(QWidget):
             try:
                 self.source_edit.clear()
                 self.target_edit.clear()
+                self.comment_edit.clear()
             finally:
                 self._loading = False
             return
@@ -238,6 +246,7 @@ class SegmentEditor(QWidget):
             try:
                 self.source_edit.clear()
                 self.target_edit.clear()
+                self.comment_edit.clear()
                 self.status_combo.setCurrentText(SegmentStatus.NEW.value)
             finally:
                 self._loading = False
@@ -259,6 +268,7 @@ class SegmentEditor(QWidget):
         try:
             self.source_edit.setPlainText(segment.source if segment else '')
             self.target_edit.setPlainText(segment.target if segment else '')
+            self.comment_edit.setPlainText(segment.comment if segment else '')
             self.status_combo.setCurrentText(
                 segment.status.value if segment else SegmentStatus.NEW.value
             )
@@ -266,6 +276,19 @@ class SegmentEditor(QWidget):
             self._loading = False
         if segment:
             self.segment_changed.emit(segment)
+
+    def _on_comment_changed(self) -> None:
+        if self._loading:
+            return
+        segment = self.current_segment()
+        if segment is None:
+            return
+        value = self.comment_edit.toPlainText()
+        if value != segment.comment:
+            segment.comment = value
+            segment.updated_at = datetime.now(timezone.utc)
+            # Changing metadata alone must not reset translation workflow/status.
+            self.segment_modified.emit(segment)
 
     def _on_target_changed(self) -> None:
         if self._loading:

@@ -13,13 +13,13 @@ from gamecat.ai.core import AISettings
 from gamecat.services.project_service import ProjectService
 
 
-def gui_method(name: str):
+def gui_method(name: str, scope: dict | None = None):
     path = Path(__file__).resolve().parents[1] / 'gamecat/gui/main_window.py'
     root = ast.parse(path.read_text(encoding='utf-8'))
     main_window = next(node for node in root.body if isinstance(node, ast.ClassDef) and node.name == 'MainWindow')
     function = next(node for node in main_window.body if isinstance(node, ast.FunctionDef) and node.name == name)
     function.decorator_list = []
-    scope: dict = {}
+    scope = dict(scope or {})
     exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), str(path), 'exec'), scope)
     return scope[name]
 
@@ -28,19 +28,30 @@ def test_gui_tm_suggestions_respect_project_threshold(tmp_path: Path):
     service = ProjectService(tmp_path / 'project.sqlite')
     project = service.create_project('Demo', 'en', 'pl', 'txt')
     service.set_tm_threshold(project, 0.91)
+    from concurrent.futures import Future
     thresholds = []
+    matches = []
+    segment = SimpleNamespace(id=7, source='Test')
     real_find = service.find_tm_matches
 
-    def capturing_find(*args, **kwargs):
-        thresholds.append(kwargs.get('threshold'))
-        return real_find(*args, **kwargs)
+    def fake_async(project, source, limit=5):
+        done = Future()
+        thresholds.append(None)  # async call leaves threshold to ProjectService
+        done.set_result(real_find(project, source, limit=limit))
+        return done
 
-    service.find_tm_matches = capturing_find
-    matches = []
+    service.find_tm_matches_async = fake_async
+    class ImmediateTimer:
+        @staticmethod
+        def singleShot(_delay, callback):
+            callback()
+
     stub = SimpleNamespace(project_service=service, current_project=project,
+                           _tm_generation=0, _closing=False,
+                           segment_editor=SimpleNamespace(current_segment=lambda: segment),
                            tm_panel=SimpleNamespace(set_matches=lambda value: matches.append(value)))
     try:
-        gui_method('_update_current_tm')(stub, SimpleNamespace(source='Test'))
+        gui_method('_update_current_tm', {'QTimer': ImmediateTimer})(stub, segment)
         assert thresholds == [None], 'The controller must defer to the persisted project threshold'
         assert matches == [[]]
     finally:

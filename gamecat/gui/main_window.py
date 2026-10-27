@@ -540,17 +540,68 @@ class MainWindow(QMainWindow):
         return self.project_service.list_glossary(self.current_project.id)
 
     def _update_current_qa(self, segment: Segment) -> None:
-        issues = validate_segment(segment.source, segment.target, self._glossary_for_current_project())
-        self.qa_panel.set_issues(issues)
+        """Validate the current editor snapshot in a worker; discard stale replies."""
+        self._qa_generation += 1
+        token = self._qa_generation
+        service, project = self.project_service, self.current_project
+        if service is None or project is None or segment.id is None or self._closing:
+            self.qa_panel.set_issues([])
+            return
+        sid, source, target = segment.id, segment.source, segment.target
+        pending = self._qa_future
+        if pending is not None:
+            pending.cancel()
+        future = service.check_segment_qa_async(project, source, target)
+        self._qa_future = future
+
+        def poll() -> None:
+            if self._closing or token != self._qa_generation or self.project_service is not service:
+                return
+            if not future.done():
+                QTimer.singleShot(50, poll)
+                return
+            active = self.segment_editor.current_segment()
+            if active is None or active.id != sid or active.source != source or active.target != target:
+                return
+            try:
+                self.qa_panel.set_issues(future.result())
+            except Exception as exc:
+                self.qa_panel.set_issues([])
+                self.statusBar().showMessage(f'Błąd QA segmentu: {exc}', 5000)
+
+        QTimer.singleShot(0, poll)
 
     def _update_current_tm(self, segment: Segment) -> None:
-        if self.project_service is None or self.current_project is None:
+        """Compute fuzzy suggestions off the GUI thread, ignoring stale results."""
+        self._tm_generation += 1
+        token = self._tm_generation
+        service, project = self.project_service, self.current_project
+        if service is None or project is None or segment.id is None or self._closing:
             self.tm_panel.set_matches([])
             return
-        matches = self.project_service.find_tm_matches(
-            self.current_project, segment.source, limit=5
-        )
-        self.tm_panel.set_matches(matches)
+        segment_id, source = segment.id, segment.source
+        pending = getattr(self, '_tm_future', None)
+        if pending is not None:
+            pending.cancel()
+        future = service.find_tm_matches_async(project, source, limit=5)
+        self._tm_future = future
+
+        def poll() -> None:
+            if self._closing or token != self._tm_generation or self.project_service is not service:
+                return
+            if not future.done():
+                QTimer.singleShot(50, poll)
+                return
+            active = self.segment_editor.current_segment()
+            if active is None or active.id != segment_id or active.source != source:
+                return
+            try:
+                self.tm_panel.set_matches(future.result())
+            except Exception as exc:
+                self.tm_panel.set_matches([])
+                self.statusBar().showMessage(f'Błąd wyszukiwania TM: {exc}', 5000)
+
+        QTimer.singleShot(0, poll)
 
     def _refresh_tm_context(self) -> None:
         segment = self.segment_editor.current_segment()
@@ -693,9 +744,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f'TM: dodano {created} nowych par tłumaczeniowych.', 5000)
 
     def _on_segment_modified(self, segment: Segment) -> None:
+        self._content_generation += 1
         self._save_modified_segment(segment)
         self._update_current_qa(segment)
         self._refresh_progress()
+        if self._pending_qa_jump is not None or self.segment_editor.quality_filter.currentData() in {'qa_errors', 'tm_match'}:
+            self._refresh_search_context(force_qa=self._pending_qa_jump is not None)
 
     def _select_qa_segment(self, segment_id: int) -> None:
         if not self.segment_editor.select_segment_by_id(segment_id, reveal=True):
@@ -711,39 +765,69 @@ class MainWindow(QMainWindow):
     def run_project_qa(self) -> None:
         # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
         assert self.project_service is not None and self.current_project is not None
-        report = self.project_service.run_project_qa(self.current_project)
-        self.qa_panel.set_project_report(report)
-        self._refresh_search_context()
-        self.statusBar().showMessage(
-            f'QA: {report.issue_count} problemów w {report.issue_segment_count} z {report.segment_count} segmentów.',
-            7000,
-        )
+        project_id = self.current_project.id
+        service = self.project_service
+        content_version = self._content_generation
+        future = service.run_project_qa_async(self.current_project)
+
+        def show_report(report) -> None:
+            if self.project_service is not service or self.current_project is None or self.current_project.id != project_id:
+                return
+            if content_version != self._content_generation:
+                self.qa_panel.clear_project_report()
+                self.statusBar().showMessage('Treść projektu zmieniła się podczas QA — uruchom skan ponownie.', 7000)
+                return
+            self.qa_panel.set_project_report(report)
+            self._refresh_search_context()
+            self.statusBar().showMessage(
+                f'QA: {report.issue_count} problemów w {report.issue_segment_count} z {report.segment_count} segmentów.',
+                7000,
+            )
+        self._watch_future(future, show_report, 'Kontrola QA')
 
     def _refresh_search_context(self, *_args, force_qa: bool = False) -> None:
-        """Calculate quality indexes only when a filter/navigation needs them."""
-        if self.project_service is None or self.current_project is None:
+        """Run expensive QA/TM filter index work outside the UI thread."""
+        self._quality_generation += 1
+        token = self._quality_generation
+        service, project = self.project_service, self.current_project
+        if service is None or project is None or self._closing:
             self.segment_editor.set_search_context(qa_error_ids=set(), tm_match_ids=set())
             return
         quality = self.segment_editor.quality_filter.currentData()
-        kwargs: dict[str, set[int]] = {}
-        if force_qa or quality == 'qa_errors':
-            glossary = self.project_service.list_glossary(self.current_project.id)
-            kwargs['qa_error_ids'] = {
-                segment.id for segment in self.segment_editor.all_segments()
-                if segment.id is not None and validate_segment(segment.source, segment.target, glossary)
-            }
-        if quality == 'tm_match':
-            project = self.current_project
-            tm_sources = {
-                entry.source for entry in self.project_service.translation_memory.list_for_languages(
-                    project.source_language, project.target_language
-                )
-            }
-            kwargs['tm_match_ids'] = {
-                segment.id for segment in self.segment_editor.all_segments()
-                if segment.id is not None and segment.source in tm_sources
-            }
-        self.segment_editor.set_search_context(**kwargs)
+        qa_needed = force_qa or quality == 'qa_errors'
+        tm_needed = quality == 'tm_match'
+        if not qa_needed and not tm_needed:
+            return
+        snapshot = self.segment_editor.all_segments()
+        pending = getattr(self, '_quality_future', None)
+        if pending is not None:
+            pending.cancel()
+        future = service.calculate_search_context_async(project, snapshot, qa=qa_needed, tm=tm_needed)
+        self._quality_future = future
+        current_project_id = project.id
+
+        def poll() -> None:
+            if self._closing or token != self._quality_generation or self.project_service is not service:
+                return
+            if self.current_project is None or self.current_project.id != current_project_id:
+                return
+            if not future.done():
+                QTimer.singleShot(50, poll)
+                return
+            try:
+                result = future.result()
+            except Exception as exc:
+                self.statusBar().showMessage(f'Nie można wyliczyć filtrów: {exc}', 5000)
+                self._pending_qa_jump = None
+                return
+            self.segment_editor.set_search_context(**result)
+            if self._pending_qa_jump is not None and 'qa_error_ids' in result:
+                backwards, anchor_id = self._pending_qa_jump
+                self._pending_qa_jump = None
+                if not self.segment_editor.jump_to_next('qa_errors', backwards=backwards, anchor_id=anchor_id):
+                    self.statusBar().showMessage('Nie znaleziono segmentu z błędem QA.', 3500)
+
+        QTimer.singleShot(0, poll)
 
     def _jump_to_segment(self, kind: str, *, backwards: bool = False) -> None:
         if self.current_project is None:
@@ -751,7 +835,9 @@ class MainWindow(QMainWindow):
         current = self.segment_editor.current_segment()
         anchor_id = current.id if current is not None else None
         if kind == 'qa_errors':
+            self._pending_qa_jump = (backwards, anchor_id)
             self._refresh_search_context(force_qa=True)
+            return
         if not self.segment_editor.jump_to_next(kind, backwards=backwards, anchor_id=anchor_id):
             self.statusBar().showMessage('Nie znaleziono pasującego segmentu.', 3500)
 
@@ -866,6 +952,7 @@ class MainWindow(QMainWindow):
             self.project_service.set_format_profile(self.current_project, FormatProfile(
                 'csv', key_field=csv_columns[0], source_field=csv_columns[1],
                 target_field=csv_columns[2] or 'target',
+                comment_field=csv_dialog.comment_column() or '',
             ))
 
         if not self._configure_mapping(path):
@@ -970,7 +1057,7 @@ class MainWindow(QMainWindow):
     def export_segments(self) -> None:
         # @requires_project gwarantuje otwarty projekt; asserty zawężają typy.
         assert self.project_service is not None and self.current_project is not None
-        if self.project_service.segments.count_for_project(self.current_project.id) == 0:
+        if self.project_service.count_segments(self.current_project.id) == 0:
             QMessageBox.information(self, 'GameCAT', 'Projekt nie zawiera segmentów do eksportu.')
             return
 
@@ -1170,8 +1257,7 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 return
             glossary = self.project_service.list_glossary(project.id)
-            tm = self.project_service.translation_memory.list_for_languages(
-                project.source_language, project.target_language)
+            tm = self.project_service.get_tm_entries(project)
             tuples = [(s.id, s.source, s.target) for s in candidates]
             self._ai_cancel.clear()
             self.ai_panel.progress_label.setText('OpenAI: przygotowywanie wsadu…')
@@ -1255,7 +1341,7 @@ class MainWindow(QMainWindow):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        segment = self.project_service.segments.get(segment_id)
+        segment = self.project_service.get_segment(segment_id)
         replace = bool(segment.target.strip())
         protected = segment.status in {SegmentStatus.REVIEWED, SegmentStatus.APPROVED}
         if replace:
@@ -1295,6 +1381,13 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self._ai_cancel.set()
+        self._closing = True
+        self._tm_generation += 1
+        self._qa_generation += 1
+        self._quality_generation += 1
+        for pending in (self._tm_future, self._qa_future, self._quality_future):
+            if pending is not None:
+                pending.cancel()
         if self.project_service is not None:
             try:
                 self.project_service.close()
@@ -1304,6 +1397,7 @@ class MainWindow(QMainWindow):
                     'GameCAT',
                     f'Nie udało się zapisać wszystkich zmian przed zamknięciem:\n{exc}',
                 )
+                self._closing = False
                 event.ignore()
                 return
             self.project_service = None

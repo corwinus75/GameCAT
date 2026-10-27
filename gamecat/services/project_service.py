@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from threading import RLock
 import json
 import math
 from collections.abc import Iterable, Mapping
@@ -33,6 +34,7 @@ from gamecat.tm.analysis import ExecutionMode, TMAnalysisReport, analyze
 from gamecat.exceptions import ImportFormatError
 from gamecat.database.segment_iterator import SegmentBatchIterator
 from gamecat.qa.project_scan import ProjectQAReport, scan_segments
+from gamecat.qa.validator import validate_segment
 from gamecat.utils.decorators import measure_time
 from gamecat.workflow.status import ProjectProgress
 from gamecat.services.glossary_service import GlossaryService
@@ -76,6 +78,8 @@ class ProjectService:
         self._active_tm_project_id: int | None = None
         self.io = IOWorkerPool(max_io_workers)
         self.save_queue = SaveQueue(self.segments, autosave_debounce_seconds)
+        self._tm_cache_lock = RLock()
+        self._tm_entries_cache: dict[tuple[str, str], tuple[TranslationMemoryEntry, ...]] = {}
 
     def set_format_profile(self, project: Project, profile: FormatProfile) -> None:
         """Persist format mapping per project and format; never store source files."""
@@ -193,20 +197,82 @@ class ProjectService:
 
     def select_project(self, project: Project) -> None:
         """Activate a project's persisted TM without switching on failed opens."""
-        project_id = self._tm_project_id(project)
-        self.projects.get(project_id)  # project must belong to this database
-        if project_id == self._active_tm_project_id:
-            return
-        setting = self._tm_setting(project)
-        external = setting['external_path'] if setting is not None else None
-        if external:
-            self._select_tm_storage(Path(external), create_new=False)
-        else:
-            self.translation_memory = self._internal_tm
-            if self._external_tm_connection is not None:
-                self._external_tm_connection.close()
-                self._external_tm_connection = None
-        self._active_tm_project_id = project_id
+        with self._tm_cache_lock:
+            project_id = self._tm_project_id(project)
+            self.projects.get(project_id)  # project must belong to this database
+            if project_id == self._active_tm_project_id:
+                return
+            setting = self._tm_setting(project)
+            external = setting['external_path'] if setting is not None else None
+            if external:
+                self._select_tm_storage(Path(external), create_new=False)
+            else:
+                self.translation_memory = self._internal_tm
+                if self._external_tm_connection is not None:
+                    self._external_tm_connection.close()
+                    self._external_tm_connection = None
+            self._active_tm_project_id = project_id
+            self.invalidate_tm_cache()
+
+    def invalidate_tm_cache(self) -> None:
+        """Discard TM snapshots after storage or entries change."""
+        with self._tm_cache_lock:
+            self._tm_entries_cache.clear()
+
+    def get_tm_entries(self, project: Project) -> tuple[TranslationMemoryEntry, ...]:
+        """Cache the current language pair; never return a live SQLite cursor."""
+        with self._tm_cache_lock:
+            self._ensure_tm_project(project)
+            key = (project.source_language, project.target_language)
+            if key not in self._tm_entries_cache:
+                self._tm_entries_cache[key] = tuple(self.translation_memory.list_for_languages(*key))
+            return self._tm_entries_cache[key]
+
+    def tm_sources(self, project: Project) -> frozenset[str]:
+        return frozenset(entry.source for entry in self.get_tm_entries(project))
+
+    def get_segment(self, segment_id: int) -> Segment:
+        return self.segments.get(segment_id)
+
+    def count_segments(self, project_id: int | None) -> int:
+        return self.segments.count_for_project(project_id) if project_id is not None else 0
+
+    def calculate_search_context(
+        self, project: Project, segments: Iterable[Segment], *, qa: bool = False, tm: bool = False,
+    ) -> dict[str, set[int]]:
+        """Calculate quality indexes off the UI thread using immutable snapshots."""
+        snapshot = tuple((segment.id, segment.source, segment.target) for segment in segments
+                         if segment.id is not None)
+        return self._calculate_search_snapshot(project, snapshot, qa, tm)
+
+    def _calculate_search_snapshot(
+        self, project: Project, snapshot: tuple[tuple[int, str, str], ...], qa: bool, tm: bool,
+    ) -> dict[str, set[int]]:
+        result: dict[str, set[int]] = {}
+        if qa:
+            glossary = self.list_glossary(project.id)
+            result['qa_error_ids'] = {sid for sid, source, target in snapshot
+                                      if validate_segment(source, target, glossary)}
+        if tm:
+            sources = self.tm_sources(project)
+            result['tm_match_ids'] = {sid for sid, source, _ in snapshot if source in sources}
+        return result
+
+    def calculate_search_context_async(
+        self, project: Project, segments: Iterable[Segment], *, qa: bool = False, tm: bool = False,
+    ) -> Future[dict[str, set[int]]]:
+        """Snapshot mutable editor state before dispatch; no Qt usage in worker."""
+        # Copy only immutable fields on the UI thread; no costly Segment objects.
+        snapshot = tuple((s.id, s.source, s.target) for s in segments if s.id is not None)
+        return self.io.submit(self._calculate_search_snapshot, project, snapshot, qa, tm)
+
+    def find_tm_matches_async(
+        self, project: Project, source: str, limit: int = 5,
+    ) -> Future[list[TMMatch]]:
+        return self.io.submit(self.find_tm_matches, project, source, limit)
+
+    def run_project_qa_async(self, project: Project) -> Future[ProjectQAReport]:
+        return self.io.submit(self.run_project_qa, project)
 
     def _ensure_tm_project(self, project: Project) -> None:
         if self._active_tm_project_id != self._tm_project_id(project):
@@ -228,6 +294,12 @@ class ProjectService:
         """
         self.flush_saves()
         return self.segments.iter_for_project(project_id, batch_size)
+
+    def check_segment_qa_async(self, project: Project, source: str, target: str):
+        """Validate an unsaved editor snapshot off the GUI thread."""
+        def check():
+            return validate_segment(source, target, self.list_glossary(project.id))
+        return self.io.submit(check)
 
     @measure_time
     def run_project_qa(self, project: Project) -> ProjectQAReport:
@@ -300,7 +372,8 @@ class ProjectService:
             imported = import_txt(path)
         elif suffix == '.csv':
             key_column, source_column, target_column = csv_columns or ('id', 'source', 'target')
-            imported = import_csv(path, key_column, source_column, target_column)
+            imported = import_csv(path, key_column, source_column, target_column,
+                                  self.get_format_profile(project, 'csv').comment_field)
         elif suffix == '.json' and not self.has_format_profile(project, 'json'):
             imported = import_json(path)
         elif suffix in {'.json', '.tsv', '.xlsx', '.xml'}:
@@ -311,7 +384,8 @@ class ProjectService:
         # leniwie, wewnątrz jednej transakcji – błąd w połowie pliku cofa całość.
         segments = (
             Segment(item.source, item.position, item.key, item.target, project_id=project.id,
-                    status=SegmentStatus.TRANSLATED if item.target.strip() else SegmentStatus.NEW)
+                    status=SegmentStatus.TRANSLATED if item.target.strip() else SegmentStatus.NEW,
+                    comment=item.comment)
             for item in imported
         )
         try:
@@ -373,6 +447,7 @@ class ProjectService:
                 ) for item in items if item.project_id == project_id
                     and item.target.strip() and item.source.strip()]
                 self.translation_memory.create_unique_many(new_entries)
+            self.invalidate_tm_cache()
         return count
 
     def replace_targets(
@@ -517,7 +592,9 @@ class ProjectService:
             for segment in self.list_segments(project.id)
             if segment.target.strip() and segment.source.strip()
         )
-        return self.translation_memory.create_unique_many(entries)
+        count = self.translation_memory.create_unique_many(entries)
+        self.invalidate_tm_cache()
+        return count
 
     def find_tm_matches(
         self,
@@ -526,8 +603,7 @@ class ProjectService:
         limit: int = 5,
         threshold: float | None = None,
     ) -> list[TMMatch]:
-        self._ensure_tm_project(project)
-        entries = self.translation_memory.list_for_languages(project.source_language, project.target_language)
+        entries = self.get_tm_entries(project)
         return find_matches(source, entries, limit=limit, threshold=(self.get_tm_threshold(project) if threshold is None else threshold))
 
     @measure_time
@@ -542,8 +618,7 @@ class ProjectService:
         if project.id is None:
             raise ValueError('project must be persisted before TM analysis')
         self._ensure_tm_project(project)
-        tm = [(e.source, e.target) for e in
-              self.translation_memory.list_for_languages(project.source_language, project.target_language)]
+        tm = [(e.source, e.target) for e in self.get_tm_entries(project)]
         items = ((segment.id, segment.source) for segment in self.iter_segments(project.id)
                  if segment.id is not None)
         report = analyze(items, tm, mode=mode, workers=workers, min_parallel=min_parallel)
@@ -652,35 +727,41 @@ class ProjectService:
 
     def attach_tm_database(self, project: Project, path: Path) -> None:
         path = Path(path).expanduser().resolve()
-        # Preserve current storage and preference when selection fails.
-        self.projects.get(self._tm_project_id(project))
-        self._select_tm_storage(path)
-        self._active_tm_project_id = project.id
-        with self.connection:
-            self.connection.execute(
-                'INSERT INTO tm_project_settings(project_id,external_path) VALUES(?,?) '
-                'ON CONFLICT(project_id) DO UPDATE SET external_path=excluded.external_path',
-                (self._tm_project_id(project), str(path)),
-            )
+        with self._tm_cache_lock:
+            # Preserve current storage and preference when selection fails.
+            self.projects.get(self._tm_project_id(project))
+            self._select_tm_storage(path)
+            self._active_tm_project_id = project.id
+            self.invalidate_tm_cache()
+            with self.connection:
+                self.connection.execute(
+                    'INSERT INTO tm_project_settings(project_id,external_path) VALUES(?,?) '
+                    'ON CONFLICT(project_id) DO UPDATE SET external_path=excluded.external_path',
+                    (self._tm_project_id(project), str(path)),
+                )
 
     def use_project_tm_database(self, project: Project) -> None:
-        self.projects.get(self._tm_project_id(project))
-        with self.connection:
-            self.connection.execute(
-                'INSERT INTO tm_project_settings(project_id,external_path) VALUES(?,NULL) '
-                'ON CONFLICT(project_id) DO UPDATE SET external_path=NULL',
-                (self._tm_project_id(project),),
-            )
-        self.translation_memory = self._internal_tm
-        if self._external_tm_connection is not None:
-            self._external_tm_connection.close()
-            self._external_tm_connection = None
-        self._active_tm_project_id = project.id
+        with self._tm_cache_lock:
+            self.projects.get(self._tm_project_id(project))
+            with self.connection:
+                self.connection.execute(
+                    'INSERT INTO tm_project_settings(project_id,external_path) VALUES(?,NULL) '
+                    'ON CONFLICT(project_id) DO UPDATE SET external_path=NULL',
+                    (self._tm_project_id(project),),
+                )
+            self.translation_memory = self._internal_tm
+            if self._external_tm_connection is not None:
+                self._external_tm_connection.close()
+                self._external_tm_connection = None
+            self._active_tm_project_id = project.id
+            self.invalidate_tm_cache()
 
     def import_tm_file(self, project: Project, path: Path) -> int:
         self._ensure_tm_project(project)
         entries = read_tm(path)  # parse and validate entire file before writes
-        return self.translation_memory.create_unique_many(entries)
+        count = self.translation_memory.create_unique_many(entries)
+        self.invalidate_tm_cache()
+        return count
 
     def export_tm_file(self, project: Project, path: Path) -> int:
         self._ensure_tm_project(project)
@@ -694,13 +775,13 @@ class ProjectService:
 
     @staticmethod
     @measure_time
-    def _export_file(segments: Iterable[Segment], path: Path, format_name: str) -> None:
+    def _export_file(segments: Iterable[Segment], path: Path, format_name: str, *, ordered: bool = False) -> None:
         if format_name == 'txt':
-            export_txt(segments, path)
+            export_txt(segments, path, ordered=ordered)
         elif format_name == 'csv':
-            export_csv(segments, path)
+            export_csv(segments, path, ordered=ordered)
         elif format_name == 'json':
-            export_json(segments, path, 'list')
+            export_json(segments, path, 'list', ordered=ordered)
         else:
             raise ValueError(f'Unsupported export format: {format_name}')
 
@@ -714,7 +795,7 @@ class ProjectService:
         if format_name in {'tsv', 'xlsx', 'xml'}:
             return export_translations(iterator, path, self.get_format_profile(project, format_name))
         counted = _CountingIterator(iterator)
-        self._export_file(counted, path, format_name)
+        self._export_file(counted, path, format_name, ordered=True)
         return counted.count
 
     def _export_using_template(self, project: Project, template: Path, destination: Path) -> int:

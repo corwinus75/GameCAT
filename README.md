@@ -2,7 +2,15 @@
 
 GameCAT to desktopowy program CAT (Computer-Assisted Translation) do lokalizacji gier, przygotowany jako projekt zaliczeniowy z przedmiotu **Zaawansowane techniki programowania w języku Python**.
 
-## Funkcje wersji 1.0.2
+### Nowości 1.1 — responsywność, architektura i kontekst
+
+- GUI korzysta z fasady `ProjectService`, zamiast bezpośrednio z repozytoriów segmentów/TM.
+- Sugestie fuzzy TM i pełne skany filtrów QA/TM wykonywane w tle z odrzucaniem nieaktualnych odpowiedzi. TM ma cache z unieważnianiem po zmianach magazynu lub zawartości.
+- Eksport z uporządkowanego iteratora SQLite: TXT, CSV, TSV i JSON zapisują dane strumieniowo; QA całego projektu nie materializuje pełnej listy segmentów.
+- Edytowalne pole **Kontekst / komentarz** pod Target; `FormatProfile.comment_field` mapuje komentarze z CSV/TSV/XLSX/JSON/XML. Komentarze pozostają w SQLite i nie zmieniają statusu workflow.
+- [Pełny opis 1.1 i lista testów ręcznych](docs/releases/1.1.md).
+
+## Funkcje wersji 1.1.0
 
 - projekty tłumaczeniowe i segmenty Source/Target,
 - wyszukiwanie Source/Target z regex i sortowaniem, filtry QA/TM, podgląd masowej zamiany Target oraz nawigacja do braków/QA,
@@ -99,14 +107,6 @@ Wydanie poprawkowe zgodne z bazami SQLite 1.0.0 (bez migracji schematu):
 
 Zobacz [notatki wydania 1.0.1](docs/releases/1.0.1.md).
 
-## Wydanie 1.0 — materiały zaliczeniowe
-
-- [Raport projektu](docs/project_report.md) — architektura, wymagania, testy, GIL, ograniczenia.
-- [Plan 10-minutowej obrony](docs/defense_10min.md) — scenariusz demonstracji i pytania.
-- [Testy ręczne GUI](docs/gui_acceptance_checklist.md) — czynności do sprawdzenia na komputerze z PySide6.
-- [Instrukcja przekazania projektu na Moodle](docs/moodle_submission.md) — repozytorium musi zostać opublikowane przez właściciela.
-- [Informacje o wydaniu](docs/releases/1.0.md) — zmiany i znane ograniczenia.
-
 W ramach finalizacji poprawiono również bezpieczeństwo importu już przetłumaczonego pliku: nowy Target unieważnia poprzednie zatwierdzenie (`REVIEWED`/`APPROVED`), natomiast import identycznego tekstu nie odbiera statusu. Klucz OpenAI API nie należy do danych projektu.
 
 ## Nowości w wersji 0.11
@@ -164,8 +164,6 @@ Dane: 160 segmentów × 240 wpisów TM, 2 workerów, 3 powtórzeń (mediana), se
 ## Wnioski z benchmarku GIL
 
 Pomiar z wydania 1.0 dotyczy tej samej funkcji analizy Translation Memory dla trzech trybów: sekwencyjnego, `ThreadPoolExecutor` i `ProcessPoolExecutor`. Wszystkie tryby przeszły kontrolę identyczności wyników; wykonano rozgrzewkę i trzy rundy pomiarowe z rotacją kolejności. Dla 160 segmentów i 240 wpisów TM mediana wyniosła odpowiednio **0,260 s**, **0,244 s** i **1,152 s** (CPython 3.13.5, Linux, 2 workery). W tak małym zadaniu koszt uruchomienia procesów i przekazania danych jest większy od potencjalnego zysku; dlatego procesy osiągnęły tylko **0,23×** prędkości odniesienia. Minimalna różnica między wątkami a wykonaniem sekwencyjnym przy takich czasach nie dowodzi przyspieszenia pracy CPU przez wątki. Przy włączonym GIL w standardowym CPythonie jednocześnie wykonywać kod Pythona może tylko jeden wątek, więc do CPU-bound wybieramy procesy dopiero dla dostatecznie dużych zadań. **W pomiarze historycznym na Windows 11** z większym zestawem danych (600 × 1200) procesy osiągnęły **2,09×**, a wątki **1,00×**. Różnica nie jest sprzecznością: wydajność zależy od rozmiaru zadania, parametrów maszyny i narzutu komunikacji. Wątki w GameCAT pozostają właściwym wyborem dla I/O (import, eksport, autosave), a dla analizy TM aplikacja może wybrać procesy lub sekwencyjne wykonanie zależnie od wielkości projektu.
-
-Historyczne wyniki: [benchmark 0.5.1 / Windows](benchmarks/history_0.5.1_windows.md). Wynik 1.0: [tabela](benchmarks/results.md), [JSON](benchmarks/results.json), [wykres](benchmarks/gil_benchmark.png). Procedurę można powtórzyć komendą: `python benchmarks/gil_benchmark.py --segments 160 --tm 240 --repeats 3 --workers 2 --update-readme`. Większy zestaw jest opcjonalny i trwa dłużej.
 
 ## Problemy napotkane podczas realizacji
 

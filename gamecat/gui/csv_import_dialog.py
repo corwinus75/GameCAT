@@ -19,14 +19,18 @@ class CsvImportDialog(QDialog):
         self.key_combo = QComboBox()
         self.source_combo = QComboBox()
         self.target_combo = QComboBox()
+        self.comment_combo = QComboBox()
         self.key_combo.addItems(fields)
         self.source_combo.addItems(fields)
         self.target_combo.addItem(self.NO_TARGET)
         self.target_combo.addItems(fields)
+        self.comment_combo.addItem(self.NO_TARGET)
+        self.comment_combo.addItems(fields)
 
         self._select_best(self.key_combo, ('key', 'id', 'string_id', 'stringid'))
         self._select_best(self.source_combo, ('source', 'english', 'en', 'text'))
         self._select_best(self.target_combo, ('target', 'polish', 'pl', 'translation'))
+        self._select_best(self.comment_combo, ('comment', 'context', 'speaker', 'notes'))
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -38,6 +42,7 @@ class CsvImportDialog(QDialog):
         layout.addRow('Klucz / ID:', self.key_combo)
         layout.addRow('Tekst źródłowy:', self.source_combo)
         layout.addRow('Tłumaczenie (opcjonalnie):', self.target_combo)
+        layout.addRow('Kontekst / komentarz (opcjonalnie):', self.comment_combo)
         layout.addRow(buttons)
 
     @staticmethod
@@ -68,3 +73,7 @@ class CsvImportDialog(QDialog):
             self.source_combo.currentText(),
             None if target == self.NO_TARGET else target,
         )
+
+    def comment_column(self) -> str | None:
+        value = self.comment_combo.currentText()
+        return None if value == self.NO_TARGET else value

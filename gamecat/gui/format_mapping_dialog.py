@@ -28,8 +28,9 @@ class FormatMappingDialog(QDialog):
         self.source_field = QLineEdit(default.source_field)
         self.target_field = QLineEdit(default.target_field)
         self.sheet_name = QLineEdit(default.sheet_name)
+        self.comment_field = QLineEdit(default.comment_field)
         self._fields = (self.records_path, self.key_field, self.source_field,
-                        self.target_field, self.sheet_name)
+                        self.target_field, self.sheet_name, self.comment_field)
         layout = QFormLayout(self)
         if fmt == 'json':
             layout.addRow(self.legacy)
@@ -39,6 +40,7 @@ class FormatMappingDialog(QDialog):
         layout.addRow('Klucz / ID (opcjonalnie; XML: @atrybut):', self.key_field)
         layout.addRow('Pole Source:', self.source_field)
         layout.addRow('Pole Target:', self.target_field)
+        layout.addRow('Komentarz / kontekst (opcjonalnie):', self.comment_field)
         if fmt == 'xlsx':
             layout.addRow('Arkusz (puste = pierwszy):', self.sheet_name)
         help_text = (
@@ -71,4 +73,5 @@ class FormatMappingDialog(QDialog):
             source_field=self.source_field.text().strip(),
             target_field=self.target_field.text().strip(),
             sheet_name=self.sheet_name.text().strip(),
+            comment_field=self.comment_field.text().strip(),
         )

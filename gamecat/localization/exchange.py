@@ -133,7 +133,12 @@ def read_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]
             source = row[profile.source_field]
             if source is None or target is None:
                 raise ValueError(f'Missing value in row {i}')
-            yield ImportedSegment(i, source, row.get(profile.key_field) or None, target)
+            if profile.comment_field and profile.comment_field not in row:
+                raise ValueError(f'Missing context column: {profile.comment_field}')
+            comment = row.get(profile.comment_field, '') if profile.comment_field else ''
+            if comment is None:
+                comment = ''
+            yield ImportedSegment(i, source, row.get(profile.key_field) or None, target, str(comment))
         return
     if profile.format == 'json':
         root = json.loads(path.read_text(encoding='utf-8-sig'))
@@ -143,14 +148,18 @@ def read_source(path: Path, profile: FormatProfile) -> Iterator[ImportedSegment]
             key = _get_path(obj, profile.key_field, default=outer_key)
             if not isinstance(source, str) or not isinstance(target, str):
                 raise ValueError(f'JSON text must be a string at position {i}')
-            yield ImportedSegment(i, source, str(key) if key is not None else None, target)
+            comment = _get_path(obj, profile.comment_field, default='') if profile.comment_field else ''
+            if not isinstance(comment, str):
+                raise ValueError(f'JSON context must be a string at position {i}')
+            yield ImportedSegment(i, source, str(key) if key is not None else None, target, comment)
         return
     if profile.format == 'xml':
         for i, node in enumerate(_xml_records(_xml_root(path), profile), 1):
             key = _xml_value(node, profile.key_field, optional=not bool(profile.key_field))
             source = _xml_value(node, profile.source_field)
             target = _xml_value(node, profile.target_field, optional=True) or ''
-            yield ImportedSegment(i, source, key, target)
+            comment = _xml_value(node, profile.comment_field, optional=True) or ''
+            yield ImportedSegment(i, source, key, target, comment)
         return
     if profile.format == 'txt':
         with path.open(encoding='utf-8-sig') as fp:
@@ -252,7 +261,49 @@ def export_translations(segments: Iterable[Segment], path: Path, profile: Format
     """
     if path.suffix.lower().lstrip('.') != profile.format:
         raise ValueError('Export extension/profile mismatch')
-    ordered = sorted(segments, key=lambda seg: seg.position)
+    # A flat table doesn't need to retain or sort the entire project: the
+    # ProjectService iterator already yields database rows in position/id order.
+    if template_path is None and profile.format in {'csv', 'tsv'}:
+        fields = list(dict.fromkeys([profile.key_field or 'key', profile.source_field,
+                                    profile.target_field, 'position'] +
+                                    ([profile.comment_field] if profile.comment_field else [])))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(prefix='.gamecat-', dir=path.parent, delete=False) as handle:
+            temp = Path(handle.name)
+        count = 0
+        try:
+            with temp.open('w', encoding='utf-8-sig', newline='') as output:
+                writer = csv.DictWriter(output, fieldnames=fields,
+                                        delimiter='\t' if profile.format == 'tsv' else ',')
+                writer.writeheader()
+                for segment in segments:
+                    row = {profile.key_field or 'key': segment.key or '',
+                           profile.source_field: segment.source,
+                           profile.target_field: segment.target, 'position': str(segment.position)}
+                    if profile.comment_field:
+                        row[profile.comment_field] = segment.comment
+                    writer.writerow(row)
+                    count += 1
+            os.replace(temp, path)
+        finally:
+            temp.unlink(missing_ok=True)
+        return count
+    if template_path is None and profile.format == 'txt':
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(prefix='.gamecat-', dir=path.parent, delete=False) as handle:
+            temp = Path(handle.name)
+        count = 0
+        try:
+            with temp.open('w', encoding='utf-8') as output:
+                for segment in segments:
+                    output.write(segment.target + '\n')
+                    count += 1
+            os.replace(temp, path)
+        finally:
+            temp.unlink(missing_ok=True)
+        return count
+
+    ordered = list(segments)  # XML/JSON/XLSX/template validation may need materialization
     if template_path is not None:
         template_path = Path(template_path)
         if template_path.resolve() == path.resolve():
@@ -263,7 +314,7 @@ def export_translations(segments: Iterable[Segment], path: Path, profile: Format
 
     if profile.format == 'json':
         if template_path is None:
-            data = [{'key': s.key, 'source': s.source, 'target': s.target, 'position': s.position}
+            data = [{'key': s.key, 'source': s.source, 'target': s.target, 'position': s.position, 'comment': s.comment}
                     for s in ordered]
         else:
             data = json.loads(template_path.read_text(encoding='utf-8-sig'))
@@ -276,7 +327,7 @@ def export_translations(segments: Iterable[Segment], path: Path, profile: Format
             root = ET.Element('gamecat')
             for seg in ordered:
                 item = ET.SubElement(root, 'entry')
-                for field, value in (('key', seg.key or str(seg.position)), ('source', seg.source), ('target', seg.target)):
+                for field, value in (('key', seg.key or str(seg.position)), ('source', seg.source), ('target', seg.target), ('comment', seg.comment)):
                     ET.SubElement(item, field).text = value
         else:
             root = _xml_root(template_path)
@@ -300,9 +351,11 @@ def export_translations(segments: Iterable[Segment], path: Path, profile: Format
                     row[profile.target_field] = matches[pos].target
         else:
             fields = [profile.key_field or 'key', profile.source_field, profile.target_field, 'position']
+            if profile.comment_field:
+                fields.append(profile.comment_field)
             fields = list(dict.fromkeys(fields))
             table = [{profile.key_field or 'key': s.key or '', profile.source_field: s.source,
-                      profile.target_field: s.target, 'position': str(s.position)} for s in ordered]
+                      profile.target_field: s.target, 'position': str(s.position), **({profile.comment_field: s.comment} if profile.comment_field else {})} for s in ordered]
         writer = csv.DictWriter(buffer, fieldnames=fields, delimiter=delimiter)
         writer.writeheader()
         writer.writerows(table)
@@ -313,8 +366,8 @@ def export_translations(segments: Iterable[Segment], path: Path, profile: Format
                         {pos: seg.target for pos, seg in matches.items()})
         else:
             write_workbook(path, {profile.sheet_name or 'Segments': [
-                [profile.key_field or 'key', profile.source_field, profile.target_field, 'position'],
-                *[[s.key or '', s.source, s.target, str(s.position)] for s in ordered]
+                [profile.key_field or 'key', profile.source_field, profile.target_field, 'position'] + ([profile.comment_field] if profile.comment_field else []),
+                *[[s.key or '', s.source, s.target, str(s.position)] + ([s.comment] if profile.comment_field else []) for s in ordered]
             ]})
     elif profile.format == 'txt':
         _atomic_write(path, ''.join(seg.target + '\n' for seg in ordered).encode('utf-8'))

@@ -1,0 +1,9 @@
+{
+  "format": "json",
+  "records_path": "dialogues",
+  "key_field": "id",
+  "source_field": "en",
+  "target_field": "pl",
+  "sheet_name": "",
+  "comment_field": "speaker"
+}
